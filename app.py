@@ -8,7 +8,7 @@ from fpdf import FPDF
 
 # --- 1. CONFIGURACIÓN DE SEGURIDAD ---
 try:
-    GMAPS_KEY = st.secrets["MAPS_API_KEY"]
+    GMAPS_KEY = st.secrets["AIzaSyDbSp-IUd-5eTyrKVTOX5oDtcB-_1C_PVc"]
 except (FileNotFoundError, KeyError):
     st.error("⚠️ Falta configurar MAPS_API_KEY en los Secrets de Streamlit.")
     st.stop()
