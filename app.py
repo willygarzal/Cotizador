@@ -4,76 +4,58 @@ import googlemaps
 import os
 import urllib.parse
 from datetime import datetime
-from fpdf import FPDF
 
-# --- 1. CONFIGURACIÓN DE SEGURIDAD ---
+# --- 1. CONFIGURACIÓN DE APIS ---
+# Le decimos a Streamlit que busque la clave en .streamlit/secrets.toml
 try:
-    GMAPS_KEY = st.secrets["AIzaSyDbSp-IUd-5eTyrKVTOX5oDtcB-_1C_PVc"]
-except (FileNotFoundError, KeyError):
-    st.error("⚠️ Falta configurar MAPS_API_KEY en los Secrets de Streamlit.")
+    GMAPS_KEY = st.secrets["MAPS_API_KEY"]
+except FileNotFoundError:
+    st.error("❌ No se encontró la carpeta .streamlit o el archivo secrets.toml.")
+    st.stop()
+except KeyError:
+    st.error("❌ El archivo secrets.toml existe, pero NO contiene la variable 'MAPS_API_KEY'.")
     st.stop()
 
+# Si pasa las pruebas anteriores, inicializa Google Maps
 gmaps = googlemaps.Client(key=GMAPS_KEY)
+
+# Nombre del archivo actualizado para reflejar que es un historial
 CSV_FILE = "historial_cotizaciones.csv"
+COLUMNAS = ["Fecha", "Cliente", "Operacion", "Origen", "Destino", "Distancia_KM", "Tarifa_MXN"]
 
-# --- FUNCIÓN PARA GENERAR EL PDF ---
-def crear_pdf(cliente, origen, destino, km, extras, precio_mxn):
-    pdf = FPDF()
-    pdf.add_page()
-    
-    pdf.set_font("helvetica", "B", 16)
-    pdf.cell(0, 10, "COTIZACION DE SERVICIOS LOGISTICOS", new_x="LMARGIN", new_y="NEXT", align='C')
-    pdf.ln(10)
-    
-    pdf.set_font("helvetica", "", 12)
-    cliente_str = cliente if cliente else "Cliente Particular"
-    
-    pdf.cell(0, 10, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 10, f"Atencion a: {cliente_str}", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
-    pdf.cell(0, 10, f"Origen: {origen[:60]}", new_x="LMARGIN", new_y="NEXT") 
-    pdf.cell(0, 10, f"Destino: {destino[:60]}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 10, f"Distancia Total: {km:,.2f} KM", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 10, f"Cargos Adicionales (Casetas, etc): ${extras:,.2f} MXN", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
-    
-    pdf.set_font("helvetica", "B", 14)
-    pdf.cell(0, 10, f"TARIFA TOTAL: ${precio_mxn:,.2f} MXN", new_x="LMARGIN", new_y="NEXT")
-    
-    pdf.ln(20)
-    pdf.set_font("helvetica", "I", 10)
-    pdf.cell(0, 10, "* Cotizacion sujeta a disponibilidad de unidades y cambios sin previo aviso.", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 10, "* Los precios no incluyen IVA.", new_x="LMARGIN", new_y="NEXT")
-    
-    return bytes(pdf.output())
-
-# --- FUNCIÓN PARA CARGAR HISTORIAL ---
 def cargar_datos():
     if os.path.exists(CSV_FILE):
-        return pd.read_csv(CSV_FILE)
-    return pd.DataFrame(columns=["Fecha", "Cliente", "Operacion", "Origen", "Destino", "KM", "Extras_MXN", "Tarifa_MXN"])
+        df = pd.read_csv(CSV_FILE)
+        # Asegurarnos de que tenga todas las columnas necesarias
+        for col in COLUMNAS:
+            if col not in df.columns:
+                df[col] = ""
+        return df
+    return pd.DataFrame(columns=COLUMNAS)
 
 if 'df_rutas' not in st.session_state:
     st.session_state.df_rutas = cargar_datos()
 
-# --- 2. SIDEBAR (Premisas) ---
-st.sidebar.header("📊 Premisas Operativas")
-tc = st.sidebar.number_input("Tipo de Cambio", value=17.50)
-margen = st.sidebar.slider("Margen %", 5, 100, 20)
-cpk = st.sidebar.number_input("Costo Fijo (CPK)", value=15.0)
-diesel = st.sidebar.number_input("Costo Diesel", value=24.50)
-rend = st.sidebar.number_input("Rendimiento (KM/L)", value=2.2)
+# --- 2. SIDEBAR ---
+st.sidebar.header("📊 Premisas de Cotización")
+tipo_cambio = st.sidebar.number_input("Tipo de Cambio (MXN/USD)", value=17.50)
+margen_porcentaje = st.sidebar.slider("Margen de Utilidad (%)", 5, 100, 20)
 
-# --- 3. INTERFAZ PRINCIPAL ---
+st.sidebar.divider()
+cpk = st.sidebar.number_input("Costo Fijo por KM (CPK)", value=15.0)
+costo_diesel = st.sidebar.number_input("Costo Diesel", value=24.50)
+rendimiento = st.sidebar.number_input("Rendimiento (KM/L)", value=2.2)
+
+# --- 3. INTERFAZ ---
 st.title("🚛 Cotizador Logístico Pro")
-tab1, tab2 = st.tabs(["🎯 Cotizador", "📜 Historial"])
+tab1, tab2 = st.tabs(["🎯 Cotizador", "📜 Historial de Rutas"])
 
 with tab1:
-    nombre_cliente = st.text_input("👤 Nombre del Cliente / Empresa:", placeholder="Ej. Logística Global")
+    nombre_cliente = st.text_input("👤 Nombre del Cliente / Empresa:", placeholder="Ej. Logística Global S.A.")
     
     col_op, col_modo = st.columns(2)
     with col_op:
-        tipo_op = st.radio("Tipo de Operación:", ["EXPO", "IMPO"], horizontal=True)
+        tipo_op = st.radio("Operación:", ["EXPO", "IMPO"], horizontal=True)
     with col_modo:
         modo_ruta = st.toggle("Nueva ruta (Google Maps)", value=False)
 
@@ -81,123 +63,88 @@ with tab1:
     origen_final = ""
     destino_final = ""
 
-    # SELECCIÓN DE RUTA
     if modo_ruta:
-        o_input = st.text_input("📍 Punto de Origen:")
-        d_input = st.text_input("🏁 Punto de Destino:")
+        orig_input = st.text_input("Origen:")
+        dest_input = st.text_input("Destino:")
         
-        if st.button("🔍 Calcular Trayecto"):
+        if st.button("🔍 Calcular Distancia"):
             try:
-                directions = gmaps.directions(o_input, d_input, mode="driving", region="mx", language="es")
-                if directions:
-                    leg = directions[0]['legs'][0]
-                    st.session_state['data_ruta'] = {
-                        "km": leg['distance']['value'] / 1000,
-                        "o_limpio": leg['start_address'],
-                        "d_limpio": leg['end_address']
-                    }
-                    st.success("✅ Ruta calculada con éxito.")
+                res = gmaps.distance_matrix(orig_input, dest_input, mode="driving")
+                if res['rows'][0]['elements'][0]['status'] == "OK":
+                    distancia = res['rows'][0]['elements'][0]['distance']['value'] / 1000
+                    st.session_state['dist_temp'] = distancia
+                    st.session_state['o_temp'] = orig_input
+                    st.session_state['d_temp'] = dest_input
                 else:
-                    st.error("❌ No se encontró una ruta válida.")
+                    st.error("Ruta no encontrada.")
             except Exception as e:
-                st.error(f"Error de Google: {e}")
-
-        if 'data_ruta' in st.session_state:
-            distancia = st.session_state['data_ruta']['km']
-            origen_final = st.session_state['data_ruta']['o_limpio']
-            destino_final = st.session_state['data_ruta']['d_limpio']
-            
+                st.error(f"Error: {e}")
+        
+        if 'dist_temp' in st.session_state:
+            distancia = st.session_state['dist_temp']
+            origen_final = st.session_state['o_temp']
+            destino_final = st.session_state['d_temp']
     else:
-        if not st.session_state.df_rutas.empty:
-            df_u = st.session_state.df_rutas.drop_duplicates(subset=['Origen', 'Destino']).copy()
-            df_u["Etiqueta"] = df_u["Origen"] + " ➡️ " + df_u["Destino"]
-            sel = st.selectbox("Selecciona ruta frecuente:", df_u["Etiqueta"])
-            fila = df_u[df_u["Etiqueta"] == sel].iloc[0]
-            distancia = float(fila["KM"])
+        # Selección de rutas ya guardadas
+        rutas_fil = st.session_state.df_rutas.copy()
+        if not rutas_fil.empty:
+            rutas_fil["Etiqueta"] = rutas_fil["Origen"] + " ➡️ " + rutas_fil["Destino"]
+            # Quitamos duplicados para que la lista sea limpia
+            opciones = rutas_fil["Etiqueta"].unique()
+            sel = st.selectbox("Selecciona ruta frecuente:", opciones)
+            fila = rutas_fil[rutas_fil["Etiqueta"] == sel].iloc[0]
+            distancia = fila["Distancia_KM"]
             origen_final = fila["Origen"]
             destino_final = fila["Destino"]
         else:
-            st.warning("No hay rutas guardadas. Usa 'Nueva ruta' primero para guardar una.")
+            st.info("No hay rutas guardadas aún. Activa 'Nueva ruta' para empezar.")
 
-    # --- SECCIÓN: CARGOS ADICIONALES (Siempre visible) ---
-    st.divider()
-    st.subheader("➕ Cargos Adicionales (MXN)")
-    col_ext1, col_ext2, col_ext3 = st.columns(3)
-    
-    with col_ext1:
-        casetas = st.number_input("🛣️ Casetas / Peajes", min_value=0.0, value=0.0, step=50.0)
-    with col_ext2:
-        maniobras = st.number_input("🏗️ Maniobras", min_value=0.0, value=0.0, step=100.0)
-    with col_ext3:
-        seguro_otros = st.number_input("🛡️ Seguro / Otros", min_value=0.0, value=0.0, step=100.0)
-
-    total_extras = casetas + maniobras + seguro_otros
-
-    # --- MOSTRAR RESULTADOS Y BOTONES (Se activa al tener KM) ---
     if distancia > 0:
-        costo_comb = (distancia / rend) * diesel
-        costo_ruta_base = (distancia * cpk) + costo_comb
-        costo_operativo_total = costo_ruta_base + total_extras
-        
-        precio_mxn = costo_operativo_total * (1 + (margen / 100))
-        precio_usd = precio_mxn / tc
+        # CÁLCULOS
+        combustible = (distancia / rendimiento) * costo_diesel
+        costo_op = (distancia * cpk) + combustible
+        precio_mxn = costo_op * (1 + (margen_porcentaje / 100))
+        precio_usd = precio_mxn / tipo_cambio
 
         st.divider()
-        st.subheader(f"Cotización Final: {nombre_cliente if nombre_cliente else 'Cliente Particular'}")
+        st.subheader(f"Cotización para: {nombre_cliente if nombre_cliente else 'Cliente Particular'}")
         
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Distancia", f"{distancia:,.2f} KM")
-        c2.metric("Extras sumados", f"${total_extras:,.2f}")
-        c3.metric("Precio MXN", f"${precio_mxn:,.2f}")
-        c4.metric("Precio USD", f"${precio_usd:,.2f}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Distancia", f"{distancia:,.1f} KM")
+        c2.metric("Precio MXN", f"${precio_mxn:,.2f}")
+        c3.metric("Precio USD", f"${precio_usd:,.2f}")
 
-        st.subheader("🗺️ Mapa de la Ruta")
-        map_url = (
-            f"https://www.google.com/maps/embed/v1/directions"
-            f"?key={GMAPS_KEY}"
-            f"&origin={urllib.parse.quote(origen_final)}"
-            f"&destination={urllib.parse.quote(destino_final)}"
-            f"&mode=driving"
-        )
-        st.components.v1.html(f'<iframe width="100%" height="400" src="{map_url}" style="border:0; border-radius:10px;"></iframe>', height=410)
+        # BOTÓN DE GUARDADO COMPLETO
+        if st.button("💾 Guardar esta Cotización en el Historial"):
+            fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M")
+            nueva_fila = pd.DataFrame([{
+                "Fecha": fecha_hoy,
+                "Cliente": nombre_cliente if nombre_cliente else "N/A",
+                "Operacion": tipo_op,
+                "Origen": origen_final,
+                "Destino": destino_final,
+                "Distancia_KM": distancia,
+                "Tarifa_MXN": round(precio_mxn, 2)
+            }])
+            st.session_state.df_rutas = pd.concat([st.session_state.df_rutas, nueva_fila], ignore_index=True)
+            st.session_state.df_rutas.to_csv(CSV_FILE, index=False)
+            st.success("✅ Cotización guardada con éxito.")
 
-        # --- AQUÍ ESTÁN LOS 3 BOTONES ---
-        col_g, col_w, col_p = st.columns(3)
-        with col_g:
-            if st.button("💾 Guardar"):
-                nueva = pd.DataFrame([{
-                    "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "Cliente": nombre_cliente if nombre_cliente else "N/A",
-                    "Operacion": tipo_op,
-                    "Origen": origen_final,
-                    "Destino": destino_final,
-                    "KM": round(distancia, 2),
-                    "Extras_MXN": round(total_extras, 2),
-                    "Tarifa_MXN": round(precio_mxn, 2)
-                }])
-                st.session_state.df_rutas = pd.concat([st.session_state.df_rutas, nueva], ignore_index=True)
-                st.session_state.df_rutas.to_csv(CSV_FILE, index=False)
-                st.success("¡Guardada!")
+        # MAPA (URL corregida para usar la API de Google Maps Embed)
+        map_url = f"https://www.google.com/maps/embed/v1/directions?key={GMAPS_KEY}&origin={urllib.parse.quote(origen_final)}&destination={urllib.parse.quote(destino_final)}&mode=driving"
+        st.components.v1.html(f'<iframe width="100%" height="400" frameborder="0" style="border:0; border-radius:10px;" src="{map_url}" allowfullscreen></iframe>', height=410)
         
-        with col_w:
-            tel = st.text_input("Teléfono (ej: 521...):")
-            msg = f"*COTIZACIÓN LOGÍSTICA*\n👤 *Cliente:* {nombre_cliente}\n🛣️ *Ruta:* {origen_final} a {destino_final}\n📏 *KM:* {distancia:,.2f}\n💰 *Tarifa Total:* ${precio_mxn:,.2f} MXN"
-            st.link_button("🟢 Enviar WhatsApp", f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}")
-
-        with col_p:
-            pdf_bytes = crear_pdf(nombre_cliente, origen_final, destino_final, distancia, total_extras, precio_mxn)
-            nombre_archivo = f"Cotizacion_{nombre_cliente.replace(' ', '_') if nombre_cliente else 'Particular'}.pdf"
-            st.download_button(
-                label="📄 Descargar PDF",
-                data=pdf_bytes,
-                file_name=nombre_archivo,
-                mime="application/pdf",
-                type="primary" 
-            )
+        st.divider()
+        tel = st.text_input("Teléfono (ej: 521...):")
+        cliente_str = f"👤 *Cliente:* {nombre_cliente}\n" if nombre_cliente else ""
+        texto_wa = f"🚛 *COTIZACIÓN LOGÍSTICA*\n{cliente_str}📍 *Origen:* {origen_final}\n🏁 *Destino:* {destino_final}\n🛣️ *Distancia:* {distancia:,.1f} KM\n\n💰 *Total MXN:* ${precio_mxn:,.2f}\n💵 *Total USD:* ${precio_usd:,.2f}\n_(T.C. {tipo_cambio})_"
+        st.link_button("🟢 Enviar por WhatsApp", f"https://wa.me/{tel}?text={urllib.parse.quote(texto_wa)}")
 
 with tab2:
-    st.subheader("📜 Historial de Cotizaciones")
-    st.session_state.df_rutas = st.data_editor(st.session_state.df_rutas, num_rows="dynamic")
-    if st.button("Actualizar Historial"):
-        st.session_state.df_rutas.to_csv(CSV_FILE, index=False)
-        st.success("Cambios guardados en el archivo CSV.")
+    st.subheader("📜 Historial Completo")
+    # Mostramos el historial completo con las nuevas columnas
+    df_edit = st.data_editor(st.session_state.df_rutas, num_rows="dynamic")
+    if st.button("Actualizar Archivo"):
+        st.session_state.df_rutas = df_edit
+        df_edit.to_csv(CSV_FILE, index=False)
+        st.success("Archivo actualizado.")
