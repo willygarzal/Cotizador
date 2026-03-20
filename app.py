@@ -18,7 +18,7 @@ st.set_page_config(page_title="Cotizador Maestro Logístico", layout="wide")
 if 'historial' not in st.session_state:
     st.session_state.historial = []
 
-# --- 2. BASE DE DATOS DE REFERENCIA (Extraída de tu Foto) ---
+# --- 2. BASE DE DATOS DE REFERENCIA ---
 datos_referencia = [
     ["EXPO", "MTY-AREA METRO", "NUEVO LAREDO", 230, 26.00, 34.67],
     ["EXPO", "SALTILLO - RAMOS", "NUEVO LAREDO", 310, 24.00, 32.00],
@@ -38,19 +38,18 @@ with st.sidebar:
     st.markdown("---")
     st.header("⚙️ Premisas de Venta")
     
-    # Filtrar rutas por tipo (EXPO/IMPO)
     rutas_filtro = df_ref[df_ref["Tipo"] == tipo_operacion]
     ruta_sel = st.selectbox("Ruta de Referencia (Tabla)", 
                             rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"])
     
-    # Extraer valores de la tabla automáticamente
     datos_ruta = rutas_filtro[(rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"]) == ruta_sel].iloc[0]
     
-    cpk_base = datos_ruta["CPK_Base"]
-    ipk_referencia = datos_ruta["IPK_Ref"]
-    km_referencia = datos_ruta["KM_Ref"]
-
-    st.info(f"📋 **Valores Tabla:** CPK: ${cpk_base} | IPK: ${ipk_referencia}")
+    # Habilitar manipulación manual de CPK e IPK
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        cpk_manual = st.number_input("CPK Manual ($)", value=float(datos_ruta["CPK_Base"]), step=0.1)
+    with col_p2:
+        ipk_manual = st.number_input("IPK Manual ($)", value=float(datos_ruta["IPK_Ref"]), step=0.1)
 
     margen_utilidad = st.slider("Margen de Utilidad (%)", 0, 100, 25)
     tipo_cambio = st.number_input("Tipo de Cambio (USD/MXN)", value=17.00, step=0.1)
@@ -77,90 +76,80 @@ with tab_cotizador:
             if res:
                 distancia_km = res[0]['legs'][0]['distance']['value'] / 1000
                 st.success(f"🛣️ Distancia Real Detectada: {distancia_km:.2f} km")
+                
+                # REINSTALACIÓN DEL MAPA
+                map_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(origen_in)}&destination={urllib.parse.quote(destino_in)}&mode=driving"
+                st.markdown(f'<iframe width="100%" height="400" frameborder="0" style="border:0" src="{map_url}" allowfullscreen></iframe>', unsafe_allow_html=True)
         except:
-            distancia_km = km_referencia
-            st.warning(f"No se detectó mapa. Usando KM de tabla: {distancia_km} km")
+            distancia_km = float(datos_ruta["KM_Ref"])
+            st.warning(f"No se pudo cargar el mapa. Usando KM de tabla: {distancia_km} km")
 
     st.markdown("---")
     
-    with st.expander("💰 Configurar Gastos y Cargos Adicionales"):
+    with st.expander("💰 Gastos Adicionales"):
         gc1, gc2 = st.columns(2)
         with gc1:
-            st.write("**Costos Operativos**")
             c_casetas = st.number_input("Casetas ($)", min_value=0.0)
             c_maniobras = st.number_input("Maniobras ($)", min_value=0.0)
             c_cpac = st.number_input("CPAC ($)", min_value=0.0)
         with gc2:
-            st.write("**Cargos Extra**")
             e1_n = st.text_input("Concepto Extra 1", "Cruce"); e1_v = st.number_input("Monto Cruce", key="v1")
             e2_n = st.text_input("Concepto Extra 2", "Seguro"); e2_v = st.number_input("Monto Seguro", key="v2")
 
-    # --- LÓGICA FINANCIERA INTEGRADA ---
-    # IPK Calculado basado en el margen sobre el CPK base
-    ipk_calculado = cpk_base * (1 + (margen_utilidad / 100))
-    flete_con_margen = distancia_km * ipk_calculado
+    # --- LÓGICA FINANCIERA ---
+    # Si el usuario manipula el CPK manual, el flete se basa en ese valor + margen
+    # O si prefiere guiarse puramente por el IPK manual
+    flete_base = distancia_km * cpk_manual
+    flete_con_margen = flete_base * (1 + (margen_utilidad / 100))
     
-    suma_gastos_adicionales = c_casetas + c_maniobras + c_cpac + e1_v + e2_v
+    # Calculamos el IPK resultante real
+    ipk_final_real = flete_con_margen / distancia_km if distancia_km > 0 else 0
     
-    venta_total_mxn = flete_con_margen + suma_gastos_adicionales
+    suma_gastos = c_casetas + c_maniobras + c_cpac + e1_v + e2_v
+    venta_total_mxn = flete_con_margen + suma_gastos
     venta_total_usd = venta_total_mxn / tipo_cambio
 
-    # Mostrar métricas comparativas
+    # --- MÉTRICAS ---
     res_a, res_b, res_c = st.columns(3)
     res_a.metric("VENTA TOTAL MXN", f"${venta_total_mxn:,.2f}")
     res_b.metric("VENTA TOTAL USD", f"${venta_total_usd:,.2f}")
-    delta_ipk = ipk_calculado - ipk_referencia
-    res_c.metric("IPK CALCULADO", f"${ipk_calculado:.2f}", delta=f"{delta_ipk:.2f} vs Tabla")
+    
+    # Delta comparativo con el IPK manual definido en premisas
+    delta_ipk = ipk_final_real - ipk_manual
+    res_c.metric("IPK REAL", f"${ipk_final_real:.2f}", delta=f"{delta_ipk:.2f} vs Objetivo")
 
+    # --- ACCIONES ---
     st.markdown("### 📤 Finalizar")
     a1, a2, a3 = st.columns(3)
     
     with a1:
         if st.button("💾 Guardar en Historial", use_container_width=True):
-            registro = {
-                "Fecha": datetime.now().strftime("%H:%M:%S"),
+            st.session_state.historial.insert(0, {
+                "Fecha": datetime.now().strftime("%H:%M"),
                 "Cliente": nombre_cliente,
                 "Ruta": f"{origen_in}-{destino_in}",
-                "IPK": f"${ipk_calculado:.2f}",
-                "Total MXN": f"${venta_total_mxn:,.2f}",
-                "Total USD": f"${venta_total_usd:,.2f}"
-            }
-            st.session_state.historial.insert(0, registro)
-            st.toast("Guardado correctamente")
+                "IPK": f"${ipk_final_real:.2f}",
+                "Total MXN": f"${venta_total_mxn:,.2f}"
+            })
+            st.toast("Guardado!")
 
     with a2:
-        # Generación de PDF (Tu lógica original adaptada)
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, f"COTIZACION {tipo_operacion}: {nombre_cliente}", ln=True, align="C")
-        pdf.set_font("Helvetica", size=10)
-        pdf.ln(10)
-        pdf.cell(0, 7, f"Ruta: {origen_in} - {destino_in} ({distancia_km:.2f} km)", ln=True)
-        pdf.cell(0, 7, f"Servicio de Flete (IPK: ${ipk_calculado:.2f}): ${flete_con_margen:,.2f} MXN", ln=True)
-        if suma_gastos_adicionales > 0:
-            pdf.cell(0, 7, f"Gastos Adicionales: ${suma_gastos_adicionales:,.2f} MXN", ln=True)
-        pdf.ln(5)
-        pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, f"TOTAL: ${venta_total_mxn:,.2f} MXN", ln=True)
-        pdf.cell(0, 10, f"TOTAL USD: ${venta_total_usd:,.2f} (TC: {tipo_cambio})", ln=True)
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, f"COTIZACION: {nombre_cliente}", ln=True)
+        pdf.set_font("Arial", size=11)
+        pdf.cell(0, 10, f"Ruta: {origen_in} a {destino_in} ({distancia_km} km)", ln=True)
+        pdf.cell(0, 10, f"Flete Neto: ${flete_con_margen:,.2f} MXN", ln=True)
+        pdf.cell(0, 10, f"Total con Gastos: ${venta_total_mxn:,.2f} MXN", ln=True)
         
-        pdf_buf = io.BytesIO()
-        pdf_out = pdf.output(dest='S')
-        if isinstance(pdf_out, str): pdf_buf.write(pdf_out.encode('latin-1'))
-        else: pdf_buf.write(pdf_out)
-        pdf_buf.seek(0)
-        st.download_button("📄 Descargar PDF Detallado", pdf_buf, f"Cot_{nombre_cliente}.pdf", use_container_width=True)
+        pdf_out = pdf.output(dest='S').encode('latin-1')
+        st.download_button("📄 Descargar PDF", pdf_out, f"Cot_{nombre_cliente}.pdf", "application/pdf", use_container_width=True)
 
     with a3:
-        # Botón de WhatsApp con el desglose
-        wa_msg = f"*COTIZACIÓN {tipo_operacion}*\n*Cliente:* {nombre_cliente}\n*Ruta:* {origen_in} -> {destino_in}\n*IPK:* ${ipk_calculado:.2f}\n*Total:* ${venta_total_mxn:,.2f} MXN"
-        url_wa = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_msg)}"
-        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar WhatsApp</button></a>', unsafe_allow_html=True)
+        wa_msg = f"*COTIZACIÓN*\n*Cliente:* {nombre_cliente}\n*Ruta:* {origen_in}-{destino_in}\n*Total:* ${venta_total_mxn:,.2f} MXN"
+        st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_msg)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar WhatsApp</button></a>', unsafe_allow_html=True)
 
 with tab_historial:
-    st.header("📜 Historial Detallado")
     if st.session_state.historial:
         st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
-    else:
-        st.info("No hay registros aún.")
