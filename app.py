@@ -70,7 +70,119 @@ with tab_cotizador:
 
     st.markdown("---")
     
+    # --- GASTOS DESPLEGABLES ---
     with st.expander("💰 Configurar Gastos y Cargos Adicionales (Opcional)"):
         gc1, gc2 = st.columns(2)
         with gc1:
-            st.write
+            st.write("**Costos Operativos**")
+            c_casetas = st.number_input("Casetas ($)", min_value=0.0)
+            c_maniobras = st.number_input("Maniobras ($)", min_value=0.0)
+            c_seguro = st.number_input("Seguro/Otros ($)", min_value=0.0)
+        with gc2:
+            st.write("**Cargos Extra**")
+            e1_n = st.text_input("Concepto Extra 1", "Extra 1"); e1_v = st.number_input("Monto 1", key="v1")
+            e2_n = st.text_input("Concepto Extra 2", "Extra 2"); e2_v = st.number_input("Monto 2", key="v2")
+            e3_n = st.text_input("Concepto Extra 3", "Extra 3"); e3_v = st.number_input("Monto 3", key="v3")
+            e4_n = st.text_input("Concepto Extra 4", "Extra 4"); e4_v = st.number_input("Monto 4", key="v4")
+
+    # --- LÓGICA FINANCIERA (CORREGIDA) ---
+    # 1. Aplicar margen SOLO al flete
+    flete_base_neto = distancia_km * cpk_objetivo
+    flete_con_margen = flete_base_neto * (1 + (margen_utilidad / 100))
+    
+    # 2. Los gastos se suman tal cual (sin margen)
+    suma_gastos_adicionales = c_casetas + c_maniobras + c_seguro + e1_v + e2_v + e3_v + e4_v
+    
+    # 3. Totales finales
+    venta_total_mxn = flete_con_margen + suma_gastos_adicionales
+    venta_total_usd = venta_total_mxn / tipo_cambio
+
+    st.markdown("---")
+    res_a, res_b, res_c = st.columns(3)
+    res_a.metric("VENTA TOTAL MXN", f"${venta_total_mxn:,.2f}")
+    res_b.metric("VENTA TOTAL USD", f"${venta_total_usd:,.2f}")
+    res_c.metric("GASTOS ADICIONALES", f"${suma_gastos_adicionales:,.2f}")
+
+    # --- ACCIONES ---
+    st.markdown("### 📤 Finalizar")
+    a1, a2, a3 = st.columns(3)
+    
+    with a1:
+        if st.button("💾 Guardar en Historial", use_container_width=True):
+            registro = {
+                "Fecha": datetime.now().strftime("%H:%M:%S"),
+                "Cliente": nombre_cliente,
+                "Tipo": tipo_operacion,
+                "Flete (c/Mgn)": f"${flete_con_margen:,.2f}",
+                "Casetas": f"${c_casetas:,.2f}",
+                "Maniobras": f"${c_maniobras:,.2f}",
+                "Seguro": f"${c_seguro:,.2f}",
+                "Extras": f"${(e1_v+e2_v+e3_v+e4_v):,.2f}",
+                "Total MXN": f"${venta_total_mxn:,.2f}",
+                "Total USD": f"${venta_total_usd:,.2f}"
+            }
+            st.session_state.historial.insert(0, registro)
+            st.toast("Guardado correctamente")
+
+    with a2:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, f"COTIZACION {tipo_operacion}: {nombre_cliente}", ln=True, align="C")
+        pdf.set_font("Helvetica", size=10)
+        pdf.ln(10)
+        pdf.cell(0, 7, f"Ruta: {origen_in} - {destino_in} ({distancia_km:.2f} km)", ln=True)
+        pdf.ln(5)
+        pdf.cell(0, 7, f"Servicio de Flete: ${flete_con_margen:,.2f} MXN", ln=True)
+        if c_casetas > 0: pdf.cell(0, 7, f"Casetas: ${c_casetas:,.2f} MXN", ln=True)
+        if c_maniobras > 0: pdf.cell(0, 7, f"Maniobras: ${c_maniobras:,.2f} MXN", ln=True)
+        if c_seguro > 0: pdf.cell(0, 7, f"Seguro/Otros: ${c_seguro:,.2f} MXN", ln=True)
+        pdf.ln(5)
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.cell(0, 10, f"TOTAL: ${venta_total_mxn:,.2f} MXN", ln=True)
+        pdf.cell(0, 10, f"TOTAL USD: ${venta_total_usd:,.2f} (TC: {tipo_cambio})", ln=True)
+        
+        pdf_buf = io.BytesIO()
+        pdf_out = pdf.output(dest='S')
+        if isinstance(pdf_out, str): pdf_buf.write(pdf_out.encode('latin-1'))
+        else: pdf_buf.write(pdf_out)
+        pdf_buf.seek(0)
+        st.download_button("📄 Descargar PDF", pdf_buf, f"Cot_{nombre_cliente}.pdf", "application/pdf", use_container_width=True)
+
+    with a3:
+        # --- MENSAJE WHATSAPP (GASTOS SIN MARGEN) ---
+        lineas_wa = [
+            f"*COTIZACIÓN DE SERVICIO LOGÍSTICO ({tipo_operacion})*",
+            f"*Cliente:* {nombre_cliente}",
+            f"------------------------------------",
+            f"*Ruta:* {origen_in} ➡️ {destino_in}",
+            f"------------------------------------",
+            f"*DESGLOSE DE TARIFAS (MXN):*",
+            f"• Flete: ${flete_con_margen:,.2f}"
+        ]
+        if c_casetas > 0: lineas_wa.append(f"• Casetas: ${c_casetas:,.2f}")
+        if c_maniobras > 0: lineas_wa.append(f"• Maniobras: ${c_maniobras:,.2f}")
+        if c_seguro > 0: lineas_wa.append(f"• Seguro/Otros: ${c_seguro:,.2f}")
+        
+        # Extras detallados tal cual se expresaron
+        if e1_v > 0: lineas_wa.append(f"• {e1_n}: ${e1_v:,.2f}")
+        if e2_v > 0: lineas_wa.append(f"• {e2_n}: ${e2_v:,.2f}")
+        if e3_v > 0: lineas_wa.append(f"• {e3_n}: ${e3_v:,.2f}")
+        if e4_v > 0: lineas_wa.append(f"• {e4_n}: ${e4_v:,.2f}")
+            
+        lineas_wa.append(f"------------------------------------")
+        lineas_wa.append(f"*TOTAL FINAL:*")
+        lineas_wa.append(f"💰 *${venta_total_mxn:,.2f} MXN*")
+        lineas_wa.append(f"💵 *${venta_total_usd:,.2f} USD*")
+        lineas_wa.append(f"_(Tipo de cambio aplicado: {tipo_cambio})_")
+        
+        wa_msg = "\n".join(lineas_wa)
+        url_wa = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_msg)}"
+        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar Desglose Neto</button></a>', unsafe_allow_html=True)
+
+with tab_historial:
+    st.header("📜 Historial Detallado")
+    if st.session_state.historial:
+        st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
+    else:
+        st.info("No hay registros aún.")
