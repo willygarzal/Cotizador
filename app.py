@@ -5,135 +5,161 @@ import urllib.parse
 import pandas as pd
 from datetime import datetime
 
-# --- 1. CONFIGURACIÓN Y DATOS DE REFERENCIA ---
+# --- 1. CONFIGURACIÓN DE API ---
 try:
     api_key = st.secrets["MAPS_API_KEY"]
     gmaps = googlemaps.Client(key=api_key)
-except:
-    st.error("⚠️ Error: MAPS_API_KEY no configurada.")
-
-# Tabla de referencia basada en tus datos
-data_referencia = [
-    {"EXPO": "EXPO", "ORIGEN": "MTY-AREA METRO", "DESTINO": "NUEVO LAREDO", "KM": 230, "CPK": 26.0, "MARGEN": 0.25, "TC": 17.0},
-    {"EXPO": "EXPO", "ORIGEN": "SALTILLO - RAMOS", "DESTINO": "NUEVO LAREDO", "KM": 310, "CPK": 24.0, "MARGEN": 0.25, "TC": 17.0},
-    {"EXPO": "EXPO", "ORIGEN": "DERRAMADERO", "DESTINO": "NUEVO LAREDO", "KM": 380, "CPK": 25.0, "MARGEN": 0.25, "TC": 17.0},
-    {"EXPO": "IMPO", "ORIGEN": "NUEVO LAREDO", "DESTINO": "MTY-AREA METRO", "KM": 230, "CPK": 31.1, "MARGEN": 0.25, "TC": 17.0},
-    {"EXPO": "IMPO", "ORIGEN": "NUEVO LAREDO", "DESTINO": "SALTILLO - RAMOS", "KM": 310, "CPK": 28.0, "MARGEN": 0.25, "TC": 17.0},
-    {"EXPO": "IMPO", "ORIGEN": "NUEVO LAREDO", "DESTINO": "DERRAMADERO", "KM": 380, "CPK": 28.1, "MARGEN": 0.25, "TC": 17.0},
-]
-df_ref = pd.DataFrame(data_referencia)
+except Exception:
+    st.error("⚠️ Error: No se encontró 'MAPS_API_KEY' en los secretos.")
 
 st.set_page_config(page_title="Cotizador Maestro Logístico", layout="wide")
 
-# Inicializar historial en la sesión si no existe
+# Inicializar historial en la sesión para que no se borre al interactuar
 if 'historial' not in st.session_state:
     st.session_state.historial = []
 
-# --- 2. BARRA LATERAL: PREMISAS Y TABLA DE REFERENCIA ---
+# --- 2. BARRA LATERAL: PREMISAS Y CONTROL ---
 with st.sidebar:
+    st.header("👤 Datos del Cliente")
+    nombre_cliente = st.text_input("Nombre / Razón Social", "Cliente General")
+    
+    st.markdown("---")
     st.header("⚙️ Premisas de Venta")
-    cpk_premesa = st.number_input("CPK Objetivo ($)", min_value=0.0, value=28.0, step=0.5)
-    margen_premesa = st.slider("Margen de Utilidad (%)", 0, 100, 25) / 100
-    tipo_cambio = st.number_input("Tipo de Cambio (USD/MXN)", value=18.50)
+    # El CPK y el Margen ahora son los motores del precio
+    cpk_objetivo = st.number_input("CPK Objetivo ($)", min_value=0.0, value=28.0, step=0.5)
+    margen_utilidad = st.slider("Margen de Utilidad (%)", min_value=0, max_value=100, value=25)
+    tipo_cambio = st.number_input("Tipo de Cambio (USD/MXN)", value=18.50, step=0.1)
     
     st.markdown("---")
-    st.subheader("📊 Tabla de Referencia")
-    st.dataframe(df_ref[['ORIGEN', 'DESTINO', 'CPK']], hide_index=True)
+    st.subheader("📊 Referencias de Mercado")
+    data_ref = [
+        ["MTY-METRO", "N. LAREDO", 230, 26.0],
+        ["SALTILLO", "N. LAREDO", 310, 24.0],
+        ["DERRAMADERO", "N. LAREDO", 380, 25.0],
+        ["IMPO LAR", "MTY", 230, 31.1]
+    ]
+    st.table(pd.DataFrame(data_ref, columns=["Orig", "Dest", "KM", "CPK"]))
     
+    telefono_wa = st.text_input("WhatsApp de Envío (ej: 521...)", "")
+
+# --- 3. DISEÑO POR PESTAÑAS ---
+tab_cotizador, tab_historial = st.tabs(["🎯 Panel de Cotización", "📜 Historial de Consultas"])
+
+with tab_cotizador:
+    st.header(f"Cotización Actual: {nombre_cliente}")
+    
+    # SECCIÓN RUTA
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
+        origen = st.text_input("Punto de Origen", "Monterrey, NL")
+    with col_r2:
+        destino = st.text_input("Punto de Destino", "Nuevo Laredo, Tamps")
+
+    distancia_km = 0
+    tiempo_est = ""
+    if origen and destino:
+        try:
+            res = gmaps.directions(origen, destino, mode="driving")
+            if res:
+                distancia_km = res[0]['legs'][0]['distance']['value'] / 1000
+                tiempo_est = res[0]['legs'][0]['duration']['text']
+                st.success(f"🛣️ Ruta calculada: {distancia_km:.2f} km | ⏱️ {tiempo_est}")
+        except:
+            st.warning("Introduce ciudades válidas para calcular distancia.")
+
     st.markdown("---")
-    telefono_wa = st.text_input("WhatsApp (521...)")
 
-st.title("Cotizador Logístico Pro 🚚")
+    # SECCIÓN COSTOS Y EXTRAS
+    st.subheader("💰 Desglose de Cargos")
+    c_col1, c_col2 = st.columns(2)
+    
+    with c_col1:
+        st.write("**Gastos de Operación**")
+        c_casetas = st.number_input("Casetas ($)", min_value=0.0)
+        c_maniobras = st.number_input("Maniobras ($)", min_value=0.0)
+        c_seguro = st.number_input("Seguro / Otros ($)", min_value=0.0)
 
-# --- 3. ENTRADA DE RUTA ---
-col1, col2 = st.columns(2)
-with col1:
-    origen = st.text_input("Origen", placeholder="Ej. Santa Catarina, NL")
-with col2:
-    destino = st.text_input("Destino", placeholder="Ej. Nuevo Laredo")
+    with c_col2:
+        st.write("**Cargos Extra (Opcionales)**")
+        with st.expander("Abrir panel de 4 cargos adicionales"):
+            e1_n = st.text_input("Concepto 1", key="e1n"); e1_v = st.number_input("Monto 1", key="e1v")
+            e2_n = st.text_input("Concepto 2", key="e2n"); e2_v = st.number_input("Monto 2", key="e2v")
+            e3_n = st.text_input("Concepto 3", key="e3n"); e3_v = st.number_input("Monto 3", key="e3v")
+            e4_n = st.text_input("Concepto 4", key="e4n"); e4_v = st.number_input("Monto 4", key="e4v")
 
-distancia_km = 0
-tiempo = ""
+    # --- LÓGICA FINANCIERA INTEGRAL ---
+    # 1. Calculamos el flete base según el CPK objetivo de las premisas
+    flete_base = distancia_km * cpk_objetivo
+    
+    # 2. Sumamos todos los gastos operativos y extras
+    suma_gastos_extras = c_casetas + c_maniobras + c_seguro + e1_v + e2_v + e3_v + e4_v
+    
+    # 3. Calculamos el Subtotal
+    subtotal = flete_base + suma_gastos_extras
+    
+    # 4. Aplicamos el margen de utilidad definido en el Slider de premisas
+    # El margen se calcula como un multiplicador sobre el costo/subtotal
+    venta_total_mxn = subtotal * (1 + (margen_utilidad / 100))
+    venta_total_usd = venta_total_mxn / tipo_cambio
 
-if origen and destino:
-    try:
-        res = gmaps.directions(origen, destino, mode="driving")
-        if res:
-            distancia_km = res[0]['legs'][0]['distance']['value'] / 1000
-            tiempo = res[0]['legs'][0]['duration']['text']
-            st.info(f"🛣️ Distancia: {distancia_km:.2f} km | ⏱️ Tiempo: {tiempo}")
-    except:
-        st.error("Error en Google Maps")
+    st.markdown("---")
+    
+    # PANEL DE RESULTADOS FINAL
+    res_a, res_b, res_c = st.columns(3)
+    res_a.metric("TOTAL COTIZADO (MXN)", f"${venta_total_mxn:,.2f}", f"Margen: {margen_utilidad}%")
+    res_b.metric("TOTAL COTIZADO (USD)", f"${venta_total_usd:,.2f}")
+    res_c.metric("CPK APLICADO", f"${cpk_objetivo:,.2f}")
 
-# --- 4. COSTOS ADICIONALES Y EXTRAS (LOS 4 ESPACIOS) ---
-st.markdown("### 💰 Gastos y Otros Cargos")
-c_op1, c_op2 = st.columns(2)
+    # ACCIONES FINALES
+    st.markdown("### 📤 Finalizar y Enviar")
+    acc1, acc2, acc3 = st.columns(3)
+    
+    with acc1:
+        if st.button("💾 Guardar en Historial", use_container_width=True):
+            st.session_state.historial.insert(0, {
+                "Fecha": datetime.now().strftime("%d/%m %H:%M"),
+                "Cliente": nombre_cliente,
+                "Ruta": f"{origen} -> {destino}",
+                "Distancia": f"{distancia_km:.2f} km",
+                "Total MXN": f"${venta_total_mxn:,.2f}"
+            })
+            st.toast(f"Cotización de {nombre_cliente} guardada.")
 
-with c_op1:
-    c_casetas = st.number_input("Casetas ($)", min_value=0.0)
-    c_maniobras = st.number_input("Maniobras ($)", min_value=0.0)
-    c_seguro = st.number_input("Seguro / Otros ($)", min_value=0.0)
-
-with c_op2:
-    with st.expander("➕ Agregar hasta 4 Cargos Extra"):
-        e1_n = st.text_input("Concepto 1"); e1_v = st.number_input("Monto 1", key="v1")
-        e2_n = st.text_input("Concepto 2"); e2_v = st.number_input("Monto 2", key="v2")
-        e3_n = st.text_input("Concepto 3"); e3_v = st.number_input("Monto 3", key="v3")
-        e4_n = st.text_input("Concepto 4"); e4_v = st.number_input("Monto 4", key="v4")
-
-# --- 5. LÓGICA DE CÁLCULO ---
-flete_base = distancia_km * cpk_premesa
-total_otros = c_casetas + c_maniobras + c_seguro + e1_v + e2_v + e3_v + e4_v
-venta_total_mxn = flete_base + total_otros
-venta_total_usd = venta_total_mxn / tipo_cambio
-
-# --- 6. RESULTADOS Y BOTÓN DE GUARDAR ---
-st.markdown("---")
-r1, r2, r3 = st.columns(3)
-r1.metric("TARIFA MXN", f"${venta_total_mxn:,.2f}")
-r2.metric("TARIFA USD", f"${venta_total_usd:,.2f}")
-r3.metric("DISTANCIA", f"{distancia_km:.2f} KM")
-
-if st.button("💾 Guardar en Historial"):
-    nueva_entrada = {
-        "Fecha": datetime.now().strftime("%H:%M:%S"),
-        "Ruta": f"{origen} -> {destino}",
-        "KM": round(distancia_km, 2),
-        "Total MXN": round(venta_total_mxn, 2)
-    }
-    st.session_state.historial.insert(0, nueva_entrada)
-    st.success("Cotización guardada en el historial de abajo.")
-
-# --- 7. EXPORTACIÓN ---
-st.markdown("### 📤 Salida")
-b1, b2 = st.columns(2)
-
-with b1:
-    if st.button("📄 Descargar PDF"):
+    with acc2:
+        # Generación de PDF
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, "COTIZACIÓN FORMAL", ln=True, align="C")
-        pdf.set_font("Arial", size=12)
-        pdf.ln(10)
-        pdf.cell(0, 8, f"Ruta: {origen} a {destino}", ln=True)
-        pdf.cell(0, 8, f"Distancia: {distancia_km:.2f} km", ln=True)
-        pdf.cell(0, 8, f"Flete Base (CPK ${cpk_premesa}): ${flete_base:,.2f}", ln=True)
-        pdf.cell(0, 8, f"Cargos Adicionales: ${total_otros:,.2f}", ln=True)
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, f"TOTAL: ${venta_total_mxn:,.2f} MXN", ln=True)
-        pdf_bytes = pdf.output(dest="S")
-        st.download_button("Guardar PDF", pdf_bytes, "cotizacion.pdf")
+        pdf.cell(0, 10, f"COTIZACIÓN: {nombre_cliente}", ln=True, align="C")
+        pdf.set_font("Arial", size=10)
+        pdf.ln(5)
+        pdf.cell(0, 7, f"Origen: {origen} | Destino: {destino}", ln=True)
+        pdf.cell(0, 7, f"Distancia: {distancia_km:.2f} km | Tiempo: {tiempo_est}", ln=True)
+        pdf.ln(5)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 8, "DESGLOSE DE SERVICIOS:", ln=True)
+        pdf.set_font("Arial", size=10)
+        pdf.cell(100, 7, f"Flete Base (CPK ${cpk_objetivo}):", border=0)
+        pdf.cell(0, 7, f"${flete_base:,.2f}", ln=True, align="R")
+        if suma_gastos_extras > 0:
+            pdf.cell(100, 7, "Cargos Adicionales y Otros:", border=0)
+            pdf.cell(0, 7, f"${suma_gastos_extras:,.2f}", ln=True, align="R")
+        pdf.ln(2)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(100, 10, f"TOTAL FINAL (Margen {margen_utilidad}%):", border=0)
+        pdf.cell(0, 10, f"${venta_total_mxn:,.2f} MXN", ln=True, align="R")
+        
+        st.download_button("📄 Descargar PDF", pdf.output(dest="S"), f"Cot_{nombre_cliente}.pdf", use_container_width=True)
 
-with b2:
-    msg = f"Cotización: {origen}-{destino}\nTotal: ${venta_total_mxn:,.2f} MXN"
-    url = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(msg)}"
-    st.markdown(f'[📲 Enviar WhatsApp]({url})')
+    with acc3:
+        msg_wa = f"Cotización para: {nombre_cliente}\nRuta: {origen} a {destino}\nTotal: ${venta_total_mxn:,.2f} MXN\nGracias por su preferencia."
+        url_wa = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(msg_wa)}"
+        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
 
-# --- 8. HISTORIAL DE CONSULTAS ---
-st.markdown("---")
-st.subheader("📜 Historial de esta sesión")
-if st.session_state.historial:
-    st.table(pd.DataFrame(st.session_state.historial))
-else:
-    st.write("No hay cotizaciones guardadas aún.")
+with tab_historial:
+    st.header("📜 Historial de Cotizaciones de la Sesión")
+    if st.session_state.historial:
+        df_hist = pd.DataFrame(st.session_state.historial)
+        st.dataframe(df_hist, use_container_width=True, hide_index=True)
+    else:
+        st.info("Aún no has guardado ninguna cotización en esta sesión.")
