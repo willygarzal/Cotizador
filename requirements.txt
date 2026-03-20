@@ -1,5 +1,4 @@
-pandas
-googlemaps
-openpyxl
-fpdf2
 streamlit
+googlemaps
+fpdf
+pandas
