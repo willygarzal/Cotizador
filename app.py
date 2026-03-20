@@ -11,7 +11,7 @@ try:
     api_key = st.secrets["MAPS_API_KEY"]
     gmaps = googlemaps.Client(key=api_key)
 except Exception:
-    st.error("⚠️ Revisa tu archivo 'secrets.toml'.")
+    st.error("⚠️ Error: No se detecta la API Key en secrets.toml.")
 
 st.set_page_config(page_title="Cotizador Maestro Logístico", layout="wide")
 
@@ -22,6 +22,7 @@ if 'historial' not in st.session_state:
 with st.sidebar:
     st.header("👤 Datos del Cliente")
     nombre_cliente = st.text_input("Nombre del Cliente", "Cliente General")
+    tipo_operacion = st.selectbox("Tipo de Operación", ["EXPO", "IMPO"])
     
     st.markdown("---")
     st.header("⚙️ Premisas de Venta")
@@ -30,15 +31,17 @@ with st.sidebar:
     tipo_cambio = st.number_input("Tipo de Cambio (USD/MXN)", value=18.50, step=0.1)
     
     st.markdown("---")
-    st.subheader("📊 Referencia de Tarifas")
-    # Tabla corregida sin errores de cierre
-    df_referencia = pd.DataFrame([
-        ["MTY-METRO", "N. LAREDO", 230, 26.0],
-        ["SALTILLO", "N. LAREDO", 310, 24.0],
-        ["DERRAMADERO", "N. LAREDO", 380, 25.0],
-        ["IMPO LAR", "MTY", 230, 31.1]
-    ], columns=["Orig", "Dest", "KM", "CPK"])
-    st.table(df_referencia)
+    st.subheader("📊 Tabla de Referencia Completa")
+    # Tabla con todos los datos de origen/destino y tarifas base
+    df_ref = pd.DataFrame([
+        ["EXPO", "MTY-METRO", "N. LAREDO", 230, 26.0],
+        ["EXPO", "SALTILLO", "N. LAREDO", 310, 24.0],
+        ["EXPO", "DERRAMADERO", "N. LAREDO", 380, 25.0],
+        ["IMPO", "N. LAREDO", "MTY-METRO", 230, 31.1],
+        ["IMPO", "N. LAREDO", "SALTILLO", 310, 28.0],
+        ["IMPO", "N. LAREDO", "DERRAMADERO", 380, 28.1]
+    ], columns=["Tipo", "Origen", "Destino", "KM", "CPK"])
+    st.dataframe(df_ref, hide_index=True)
     
     telefono_wa = st.text_input("WhatsApp (ej: 521...)", "")
 
@@ -46,107 +49,117 @@ with st.sidebar:
 tab_cotizador, tab_historial = st.tabs(["🎯 Cotizador", "📜 Historial de Sesión"])
 
 with tab_cotizador:
-    st.header(f"Cotización: {nombre_cliente}")
+    st.header(f"Cotización {tipo_operacion}: {nombre_cliente}")
     
     col_r1, col_r2 = st.columns(2)
     with col_r1:
-        origen = st.text_input("Origen", "Monterrey, NL")
+        origen_input = st.text_input("Punto de Origen", "Monterrey, NL")
     with col_r2:
-        destino = st.text_input("Destino", "Nuevo Laredo, Tamps")
+        destino_input = st.text_input("Punto de Destino", "Nuevo Laredo, Tamps")
 
     distancia_km = 0
-    if origen and destino:
+    if origen_input and destino_input:
         try:
-            res = gmaps.directions(origen, destino, mode="driving")
+            res = gmaps.directions(origen_input, destino_input, mode="driving")
             if res:
                 distancia_km = res[0]['legs'][0]['distance']['value'] / 1000
-                st.success(f"🛣️ Distancia: {distancia_km:.2f} km")
-        except:
-            st.warning("Escribe ciudades válidas.")
+                st.success(f"🛣️ Distancia calculada: {distancia_km:.2f} km")
+                
+                # --- MAPA DE GOOGLE MAPS CORREGIDO ---
+                # Usamos el modo 'place' o 'directions' para el iframe
+                map_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(origen_input)}&destination={urllib.parse.quote(destino_input)}&mode=driving"
+                st.markdown(f'<iframe width="100%" height="450" frameborder="0" style="border:0" src="{map_url}" allowfullscreen></iframe>', unsafe_allow_html=True)
+        except Exception as e:
+            st.warning("No se pudo cargar el mapa. Verifica las ciudades o la API Key.")
 
     st.markdown("---")
-    st.subheader("💰 Gastos y Otros Cargos")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.write("**Operativos**")
-        c_casetas = st.number_input("Casetas ($)", min_value=0.0)
-        c_maniobras = st.number_input("Maniobras ($)", min_value=0.0)
-        c_seguro = st.number_input("Seguro/Otros ($)", min_value=0.0)
-    with c2:
-        st.write("**Extras**")
-        with st.expander("Panel de 4 Cargos Extra"):
-            e1_n = st.text_input("Concepto 1", key="e1n"); e1_v = st.number_input("Monto 1", key="e1v")
-            e2_n = st.text_input("Concepto 2", key="e2n"); e2_v = st.number_input("Monto 2", key="e2v")
-            e3_n = st.text_input("Concepto 3", key="e3n"); e3_v = st.number_input("Monto 3", key="e3v")
-            e4_n = st.text_input("Concepto 4", key="e4n"); e4_v = st.number_input("Monto 4", key="e4v")
-
-    # --- LÓGICA FINANCIERA ---
-    flete_base = distancia_km * cpk_objetivo
-    suma_gastos = c_casetas + c_maniobras + c_seguro + e1_v + e2_v + e3_v + e4_v
-    subtotal = flete_base + suma_gastos
     
-    # El Margen impacta sobre el subtotal acumulado
+    # --- GASTOS Y CARGOS EN DESPLEGABLE ---
+    # Inicializamos en 0 por si el usuario no abre el expander
+    c_casetas = c_maniobras = c_seguro = e1_v = e2_v = e3_v = e4_v = 0.0
+    
+    with st.expander("💰 Configurar Gastos y Cargos Extra (Opcional)"):
+        gc1, gc2 = st.columns(2)
+        with gc1:
+            st.write("**Costos de Operación**")
+            c_casetas = st.number_input("Casetas ($)", min_value=0.0)
+            c_maniobras = st.number_input("Maniobras ($)", min_value=0.0)
+            c_seguro = st.number_input("Seguro/Otros ($)", min_value=0.0)
+        with gc2:
+            st.write("**Cargos Adicionales**")
+            e1_n = st.text_input("Concepto 1", key="n1"); e1_v = st.number_input("Monto 1", key="v1")
+            e2_n = st.text_input("Concepto 2", key="n2"); e2_v = st.number_input("Monto 2", key="v2")
+            e3_n = st.text_input("Concepto 3", key="n3"); e3_v = st.number_input("Monto 3", key="v3")
+            e4_n = st.text_input("Concepto 4", key="n4"); e4_v = st.number_input("Monto 4", key="v4")
+
+    # --- LÓGICA DE CÁLCULO ---
+    flete_base = distancia_km * cpk_objetivo
+    total_gastos = c_casetas + c_maniobras + c_seguro + e1_v + e2_v + e3_v + e4_v
+    
+    subtotal = flete_base + total_gastos
+    # El margen se aplica sobre el total de costos
     venta_total_mxn = subtotal * (1 + (margen_utilidad / 100))
     venta_total_usd = venta_total_mxn / tipo_cambio
 
     st.markdown("---")
-    r_a, r_b, r_c = st.columns(3)
-    r_a.metric("VENTA MXN", f"${venta_total_mxn:,.2f}", f"Margen {margen_utilidad}%")
-    r_b.metric("VENTA USD", f"${venta_total_usd:,.2f}")
-    r_c.metric("CLIENTE", nombre_cliente)
+    res1, res2, res3 = st.columns(3)
+    res1.metric("VENTA TOTAL MXN", f"${venta_total_mxn:,.2f}", f"Margen: {margen_utilidad}%")
+    res2.metric("VENTA TOTAL USD", f"${venta_total_usd:,.2f}")
+    res3.metric("DISTANCIA", f"{distancia_km:.2f} KM")
 
-    st.markdown("### 📤 Exportar")
-    a1, a2, a3 = st.columns(3)
+    # --- ACCIONES ---
+    st.markdown("### 📤 Finalizar Cotización")
+    btn1, btn2, btn3 = st.columns(3)
     
-    with a1:
+    with btn1:
         if st.button("💾 Guardar en Historial", use_container_width=True):
             st.session_state.historial.insert(0, {
                 "Fecha": datetime.now().strftime("%d/%m %H:%M"),
+                "Tipo": tipo_operacion,
                 "Cliente": nombre_cliente,
-                "Ruta": f"{origen} a {destino}",
+                "Ruta": f"{origen_input} a {destino_input}",
                 "Total MXN": f"${venta_total_mxn:,.2f}"
             })
-            st.toast("Guardado")
+            st.toast(f"Guardada cotización de {nombre_cliente}")
 
-    with a2:
-        # Generación de PDF con Buffer para evitar errores de Streamlit
+    with btn2:
+        # Generación de PDF
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, f"COTIZACION: {nombre_cliente}", ln=True, align="C")
+        pdf.cell(0, 10, f"COTIZACION {tipo_operacion}: {nombre_cliente}", ln=True, align="C")
         pdf.set_font("Helvetica", size=10)
         pdf.ln(10)
-        pdf.cell(0, 7, f"Ruta: {origen} - {destino} ({distancia_km:.2f} km)", ln=True)
-        pdf.cell(0, 7, f"Subtotal (Costos + Flete): ${subtotal:,.2f}", ln=True)
-        pdf.cell(0, 7, f"Margen Aplicado: {margen_utilidad}%", ln=True)
+        pdf.cell(0, 7, f"Trayecto: {origen_input} a {destino_input} ({distancia_km:.2f} km)", ln=True)
+        pdf.cell(0, 7, f"Subtotal base: ${subtotal:,.2f} | Margen: {margen_utilidad}%", ln=True)
         pdf.ln(5)
         pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, f"TOTAL FINAL: ${venta_total_mxn:,.2f} MXN", ln=True)
+        pdf.cell(0, 10, f"PRECIO FINAL: ${venta_total_mxn:,.2f} MXN", ln=True)
         
-        pdf_buffer = io.BytesIO()
-        pdf_data = pdf.output(dest='S')
-        if isinstance(pdf_data, str):
-            pdf_buffer.write(pdf_data.encode('latin-1'))
+        pdf_buf = io.BytesIO()
+        pdf_out = pdf.output(dest='S')
+        if isinstance(pdf_out, str):
+            pdf_buf.write(pdf_out.encode('latin-1'))
         else:
-            pdf_buffer.write(pdf_data)
-        pdf_buffer.seek(0)
+            pdf_buf.write(pdf_out)
+        pdf_buf.seek(0)
         
         st.download_button(
             label="📄 Descargar PDF",
-            data=pdf_buffer,
+            data=pdf_buf,
             file_name=f"Cotizacion_{nombre_cliente}.pdf",
             mime="application/pdf",
             use_container_width=True
         )
 
-    with a3:
-        msg = f"Cotización para {nombre_cliente}\nRuta: {origen}-{destino}\nTotal: ${venta_total_mxn:,.2f} MXN"
-        url = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(msg)}"
-        st.markdown(f'<a href="{url}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
+    with btn3:
+        wa_text = f"Cotización {tipo_operacion} - {nombre_cliente}\nRuta: {origen_input}-{destino_input}\nTotal: ${venta_total_mxn:,.2f} MXN"
+        wa_url = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}"
+        st.markdown(f'<a href="{wa_url}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar WhatsApp</button></a>', unsafe_allow_html=True)
 
 with tab_historial:
-    st.header("📜 Historial de Cotizaciones")
+    st.header("📜 Historial de Sesión")
     if st.session_state.historial:
         st.table(pd.DataFrame(st.session_state.historial))
     else:
-        st.info("No hay registros aún.")
+        st.info("No hay registros todavía.")
