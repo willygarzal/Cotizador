@@ -70,7 +70,6 @@ with tab_cotizador:
 
     st.markdown("---")
     
-    # --- GASTOS DESPLEGABLES ---
     with st.expander("💰 Configurar Gastos y Cargos Adicionales (Opcional)"):
         gc1, gc2 = st.columns(2)
         with gc1:
@@ -85,15 +84,10 @@ with tab_cotizador:
             e3_n = st.text_input("Concepto Extra 3", "Extra 3"); e3_v = st.number_input("Monto 3", key="v3")
             e4_n = st.text_input("Concepto Extra 4", "Extra 4"); e4_v = st.number_input("Monto 4", key="v4")
 
-    # --- LÓGICA FINANCIERA (CORREGIDA) ---
-    # 1. Aplicar margen SOLO al flete
-    flete_base_neto = distancia_km * cpk_objetivo
-    flete_con_margen = flete_base_neto * (1 + (margen_utilidad / 100))
-    
-    # 2. Los gastos se suman tal cual (sin margen)
+    # --- LÓGICA FINANCIERA ---
+    flete_con_margen = (distancia_km * cpk_objetivo) * (1 + (margen_utilidad / 100))
     suma_gastos_adicionales = c_casetas + c_maniobras + c_seguro + e1_v + e2_v + e3_v + e4_v
     
-    # 3. Totales finales
     venta_total_mxn = flete_con_margen + suma_gastos_adicionales
     venta_total_usd = venta_total_mxn / tipo_cambio
 
@@ -113,44 +107,62 @@ with tab_cotizador:
                 "Fecha": datetime.now().strftime("%H:%M:%S"),
                 "Cliente": nombre_cliente,
                 "Tipo": tipo_operacion,
-                "Flete (c/Mgn)": f"${flete_con_margen:,.2f}",
-                "Casetas": f"${c_casetas:,.2f}",
-                "Maniobras": f"${c_maniobras:,.2f}",
-                "Seguro": f"${c_seguro:,.2f}",
-                "Extras": f"${(e1_v+e2_v+e3_v+e4_v):,.2f}",
                 "Total MXN": f"${venta_total_mxn:,.2f}",
-                "Total USD": f"${venta_total_usd:,.2f}"
+                "Total USD": f"${venta_total_usd:,.2f}",
+                "Gastos": f"${suma_gastos_adicionales:,.2f}"
             }
             st.session_state.historial.insert(0, registro)
-            st.toast("Guardado correctamente")
+            st.toast("Guardado")
 
     with a2:
+        # --- GENERACIÓN DE PDF DETALLADO ---
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, f"COTIZACION {tipo_operacion}: {nombre_cliente}", ln=True, align="C")
-        pdf.set_font("Helvetica", size=10)
+        pdf.cell(0, 10, f"COTIZACION DE SERVICIO ({tipo_operacion})", ln=True, align="C")
+        pdf.set_font("Helvetica", "", 12)
+        pdf.cell(0, 10, f"Cliente: {nombre_cliente}", ln=True)
+        pdf.cell(0, 10, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", ln=True)
+        pdf.ln(5)
+        
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, f"Ruta: {origen_in} a {destino_in}", ln=True)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 8, f"Distancia estimada: {distancia_km:.2f} km", ln=True)
+        pdf.ln(5)
+        
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "DESGLOSE DE CONCEPTOS:", ln=True)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 8, f"- Servicio de Flete: ${flete_con_margen:,.2f} MXN", ln=True)
+        if c_casetas > 0: pdf.cell(0, 8, f"- Casetas: ${c_casetas:,.2f} MXN", ln=True)
+        if c_maniobras > 0: pdf.cell(0, 8, f"- Maniobras: ${c_maniobras:,.2f} MXN", ln=True)
+        if c_seguro > 0: pdf.cell(0, 8, f"- Seguro/Otros: ${c_seguro:,.2f} MXN", ln=True)
+        
+        # Extras en PDF
+        if e1_v > 0: pdf.cell(0, 8, f"- {e1_n}: ${e1_v:,.2f} MXN", ln=True)
+        if e2_v > 0: pdf.cell(0, 8, f"- {e2_n}: ${e2_v:,.2f} MXN", ln=True)
+        if e3_v > 0: pdf.cell(0, 8, f"- {e3_n}: ${e3_v:,.2f} MXN", ln=True)
+        if e4_v > 0: pdf.cell(0, 8, f"- {e4_n}: ${e4_v:,.2f} MXN", ln=True)
+        
         pdf.ln(10)
-        pdf.cell(0, 7, f"Ruta: {origen_in} - {destino_in} ({distancia_km:.2f} km)", ln=True)
-        pdf.ln(5)
-        pdf.cell(0, 7, f"Servicio de Flete: ${flete_con_margen:,.2f} MXN", ln=True)
-        if c_casetas > 0: pdf.cell(0, 7, f"Casetas: ${c_casetas:,.2f} MXN", ln=True)
-        if c_maniobras > 0: pdf.cell(0, 7, f"Maniobras: ${c_maniobras:,.2f} MXN", ln=True)
-        if c_seguro > 0: pdf.cell(0, 7, f"Seguro/Otros: ${c_seguro:,.2f} MXN", ln=True)
-        pdf.ln(5)
         pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, f"TOTAL: ${venta_total_mxn:,.2f} MXN", ln=True)
+        pdf.cell(0, 10, f"TOTAL FINAL: ${venta_total_mxn:,.2f} MXN", ln=True)
         pdf.cell(0, 10, f"TOTAL USD: ${venta_total_usd:,.2f} (TC: {tipo_cambio})", ln=True)
+        
+        pdf.ln(10)
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.cell(0, 10, "* Precios sujetos a cambios sin previo aviso.", ln=True)
         
         pdf_buf = io.BytesIO()
         pdf_out = pdf.output(dest='S')
         if isinstance(pdf_out, str): pdf_buf.write(pdf_out.encode('latin-1'))
         else: pdf_buf.write(pdf_out)
         pdf_buf.seek(0)
-        st.download_button("📄 Descargar PDF", pdf_buf, f"Cot_{nombre_cliente}.pdf", "application/pdf", use_container_width=True)
+        st.download_button("📄 Descargar PDF Detallado", pdf_buf, f"Cot_{nombre_cliente}.pdf", "application/pdf", use_container_width=True)
 
     with a3:
-        # --- MENSAJE WHATSAPP (GASTOS SIN MARGEN) ---
+        # --- MENSAJE WHATSAPP DETALLADO ---
         lineas_wa = [
             f"*COTIZACIÓN DE SERVICIO LOGÍSTICO ({tipo_operacion})*",
             f"*Cliente:* {nombre_cliente}",
@@ -163,8 +175,6 @@ with tab_cotizador:
         if c_casetas > 0: lineas_wa.append(f"• Casetas: ${c_casetas:,.2f}")
         if c_maniobras > 0: lineas_wa.append(f"• Maniobras: ${c_maniobras:,.2f}")
         if c_seguro > 0: lineas_wa.append(f"• Seguro/Otros: ${c_seguro:,.2f}")
-        
-        # Extras detallados tal cual se expresaron
         if e1_v > 0: lineas_wa.append(f"• {e1_n}: ${e1_v:,.2f}")
         if e2_v > 0: lineas_wa.append(f"• {e2_n}: ${e2_v:,.2f}")
         if e3_v > 0: lineas_wa.append(f"• {e3_n}: ${e3_v:,.2f}")
@@ -175,6 +185,8 @@ with tab_cotizador:
         lineas_wa.append(f"💰 *${venta_total_mxn:,.2f} MXN*")
         lineas_wa.append(f"💵 *${venta_total_usd:,.2f} USD*")
         lineas_wa.append(f"_(Tipo de cambio aplicado: {tipo_cambio})_")
+        lineas_wa.append(f"------------------------------------")
+        lineas_wa.append(f"_Precios sujetos a cambios sin previo aviso._")
         
         wa_msg = "\n".join(lineas_wa)
         url_wa = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_msg)}"
@@ -184,5 +196,3 @@ with tab_historial:
     st.header("📜 Historial Detallado")
     if st.session_state.historial:
         st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
-    else:
-        st.info("No hay registros aún.")
