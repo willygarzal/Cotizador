@@ -2,3 +2,4 @@ pandas
 googlemaps
 openpyxl
 fpdf2
+streamlit
