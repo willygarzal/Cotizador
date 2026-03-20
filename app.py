@@ -41,15 +41,23 @@ with st.sidebar:
     moneda_neg = st.radio("Negociar IPK en:", ["MXN (Pesos)", "USD (Dólares)"])
     
     rutas_filtro = df_ref[df_ref["Tipo"] == tipo_op]
-    opciones = ["Manual (Ruta Nueva)"] + (rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"]).tolist()
+    texto_manual = "Manual (Ruta Nueva)"
+    opciones = [texto_manual] + (rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"]).tolist()
     ruta_sel = st.selectbox("Cargar de Tabla:", opciones)
     
-    # Carga de CPK e IPK desde tabla
-    if ruta_sel != "Manual (Ruta Nueva)":
+    # Inicializar variables por defecto para evitar NameError
+    cpk_init = 25.0
+    km_init = 1.0
+    orig_sug = "Monterrey"
+    dest_sug = "Nuevo Laredo"
+
+    # Si seleccionamos una ruta de la tabla, sobreescribimos los valores
+    if ruta_sel != texto_manual:
         d_r = rutas_filtro[(rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"]) == ruta_sel].iloc[0]
-        cpk_init, km_init = float(d_r["CPK_Base"]), float(d_r["KM_Ref"])
-    else:
-        cpk_init, km_init = 25.0, 1.0
+        cpk_init = float(d_r["CPK_Base"])
+        km_init = float(d_r["KM_Ref"])
+        orig_sug = d_r["Origen"]
+        dest_sug = d_r["Destino"]
 
     cpk_manual = st.number_input("CPK Base (MXN) $", value=cpk_init)
     
@@ -61,7 +69,7 @@ with st.sidebar:
     
     cpk_total_mxn = cpk_manual + cpac + e1 + e2
 
-    # Lógica de IPK Dinámico (Amarrado al Margen de tu Excel)
+    # Lógica de IPK Dinámico (Basado en el 25% de margen de tu Excel)
     if moneda_neg == "MXN (Pesos)":
         ipk_mxn = st.number_input("IPK Objetivo (MXN) $", value=cpk_total_mxn / 0.75)
         ipk_usd = ipk_mxn / tc
@@ -69,7 +77,7 @@ with st.sidebar:
         ipk_usd = st.number_input("IPK Objetivo (USD) $", value=(cpk_total_mxn / 0.75) / tc)
         ipk_mxn = ipk_usd * tc
 
-    # Cálculo de Margen Real (Considerando TC y Costos Totales)
+    # Cálculo de Margen Real (Sensible al TC y Costos Totales)
     margen_real = (1 - (cpk_total_mxn / ipk_mxn)) * 100 if ipk_mxn > 0 else 0
 
     if margen_real < 0: st.error(f"🚨 PÉRDIDA: {margen_real:.1f}%")
@@ -85,8 +93,9 @@ with tab1:
     with col_l:
         st.subheader("📍 Ruta (Parámetros 53')")
         c1, c2 = st.columns(2)
-        orig = c1.text_input("Origen", "Monterrey" if ruta_sel=="Manual" else d_r["Origen"])
-        dest = c2.text_input("Destino", "Nuevo Laredo" if ruta_sel=="Manual" else d_r["Destino"])
+        # Aquí usamos las variables sugeridas orig_sug y dest_sug
+        orig = c1.text_input("Origen", orig_sug)
+        dest = c2.text_input("Destino", dest_sug)
         
         # KM de Tabla para Derramadero (380) o Laredo (230)
         km_final = st.number_input("KM de Ruta (Ajuste Camionero):", value=km_init)
@@ -96,9 +105,9 @@ with tab1:
             res = gmaps.directions(orig, dest)
             if res:
                 dist_google = res[0]['legs'][0]['distance']['value'] / 1000
-                st.caption(f"Google (Auto): {dist_google:.1f} km vs Tabla: {km_final} km")
+                st.caption(f"Google (Auto): {dist_google:.1f} km vs Tabla/Ajuste: {km_final} km")
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
-                st.markdown(f'<iframe width="100%" height="300" src="{m_url}"></iframe>', unsafe_allow_html=True)
+                st.markdown(f'<iframe width="100%" height="300" frameborder="0" style="border:0" src="{m_url}" allowfullscreen></iframe>', unsafe_allow_html=True)
         except: pass
 
     with col_r:
@@ -122,9 +131,15 @@ with tab1:
     a1, a2, a3 = st.columns(3)
 
     with a1:
-        if st.button("💾 Guardar", use_container_width=True):
-            st.session_state.historial.insert(0, {"Fecha": datetime.now().strftime("%d/%m %H:%M"), "Ruta": f"{orig}-{dest}", "Total": f"${total_mxn:,.2f}", "TC": tc})
-            st.toast("Guardado")
+        if st.button("💾 Guardar en Historial", use_container_width=True):
+            st.session_state.historial.insert(0, {
+                "Fecha": datetime.now().strftime("%d/%m %H:%M"), 
+                "Ruta": f"{orig}-{dest}", 
+                "IPK": f"${ipk_mxn:.2f}",
+                "Total MXN": f"${total_mxn:,.2f}", 
+                "TC": tc
+            })
+            st.toast("Guardado correctamente")
 
     with a2:
         pdf = FPDF()
@@ -135,14 +150,20 @@ with tab1:
         pdf.ln(5)
         pdf.cell(0, 7, f"Ruta: {orig} - {dest} ({km_final} km)", ln=True)
         pdf.cell(0, 7, f"IPK Pactado: ${ipk_mxn:.2f} MXN", ln=True)
-        pdf.cell(0, 7, f"Subtotal Flete: ${flete_mxn:,.2f} MXN", ln=True)
+        pdf.cell(0, 7, f"Subtotal Flete: ${flete_neto:,.2f} MXN", ln=True)
         if total_extras > 0: pdf.cell(0, 7, f"Extras (Casetas/Maniobras/Cruce): ${total_extras:,.2f} MXN", ln=True)
         pdf.ln(5)
         pdf.set_font("Arial", "B", 13)
         pdf.cell(0, 10, f"TOTAL: ${total_mxn:,.2f} MXN | USD: ${total_usd:,.2f} (TC: {tc})", ln=True)
         pdf_out = pdf.output(dest='S').encode('latin-1')
-        st.download_button("📄 PDF", pdf_out, f"Cot_{orig}.pdf", "application/pdf", use_container_width=True)
+        st.download_button("📄 Descargar PDF", pdf_out, f"Cot_{orig}.pdf", "application/pdf", use_container_width=True)
 
     with a3:
-        wa_text = f"*COTIZACIÓN*\n*Ruta:* {orig}-{dest}\n*Total:* ${total_mxn:,.2f} MXN\n*TC:* {tc}"
-        st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
+        wa_text = f"*COTIZACIÓN*\n*Cliente:* {nombre_cliente}\n*Ruta:* {orig}-{dest}\n*Total:* ${total_mxn:,.2f} MXN\n*TC:* {tc}"
+        st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar WhatsApp</button></a>', unsafe_allow_html=True)
+
+with tab_hist:
+    if st.session_state.historial:
+        st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
+    else:
+        st.info("No hay registros en el historial.")
