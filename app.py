@@ -78,25 +78,34 @@ with tab_cotizador:
             c_maniobras = st.number_input("Maniobras ($)", min_value=0.0)
             c_seguro = st.number_input("Seguro/Otros ($)", min_value=0.0)
         with gc2:
-            e1_n = st.text_input("Extra 1", "E1"); e1_v = st.number_input("Monto 1", key="v1")
-            e2_n = st.text_input("Extra 2", "E2"); e2_v = st.number_input("Monto 2", key="v2")
-            e3_n = st.text_input("Extra 3", "E3"); e3_v = st.number_input("Monto 3", key="v3")
-            e4_n = st.text_input("Extra 4", "E4"); e4_v = st.number_input("Monto 4", key="v4")
+            e1_n = st.text_input("Concepto Extra 1", "Extra 1"); e1_v = st.number_input("Monto 1", key="v1")
+            e2_n = st.text_input("Concepto Extra 2", "Extra 2"); e2_v = st.number_input("Monto 2", key="v2")
+            e3_n = st.text_input("Concepto Extra 3", "Extra 3"); e3_v = st.number_input("Monto 3", key="v3")
+            e4_n = st.text_input("Concepto Extra 4", "Extra 4"); e4_v = st.number_input("Monto 4", key="v4")
 
-    # Lógica Financiera
-    flete_base = distancia_km * cpk_objetivo
-    otros_cargos = e1_v + e2_v + e3_v + e4_v
-    subtotal_gastos = c_casetas + c_maniobras + c_seguro + otros_cargos
+    # --- LÓGICA FINANCIERA (CON MARGEN APLICADO A CADA CONCEPTO PARA EL CLIENTE) ---
+    factor_margen = 1 + (margen_utilidad / 100)
     
-    subtotal_final = flete_base + subtotal_gastos
-    venta_total_mxn = subtotal_final * (1 + (margen_utilidad / 100))
+    # Tarifas finales (lo que ve el cliente)
+    flete_cliente = (distancia_km * cpk_objetivo) * factor_margen
+    casetas_cliente = c_casetas * factor_margen
+    maniobras_cliente = c_maniobras * factor_margen
+    seguro_cliente = c_seguro * factor_margen
+    
+    extras_lista = []
+    if e1_v > 0: extras_lista.append(f"- {e1_n}: ${e1_v * factor_margen:,.2f}")
+    if e2_v > 0: extras_lista.append(f"- {e2_n}: ${e2_v * factor_margen:,.2f}")
+    if e3_v > 0: extras_lista.append(f"- {e3_n}: ${e3_v * factor_margen:,.2f}")
+    if e4_v > 0: extras_lista.append(f"- {e4_n}: ${e4_v * factor_margen:,.2f}")
+
+    venta_total_mxn = flete_cliente + casetas_cliente + maniobras_cliente + seguro_cliente + sum([e1_v, e2_v, e3_v, e4_v]) * factor_margen
     venta_total_usd = venta_total_mxn / tipo_cambio
 
     st.markdown("---")
     res_a, res_b, res_c = st.columns(3)
-    res_a.metric("VENTA MXN", f"${venta_total_mxn:,.2f}", f"Margen {margen_utilidad}%")
-    res_b.metric("VENTA USD", f"${venta_total_usd:,.2f}")
-    res_c.metric("GASTOS EXTRA", f"${subtotal_gastos:,.2f}")
+    res_a.metric("VENTA TOTAL MXN", f"${venta_total_mxn:,.2f}", f"Margen {margen_utilidad}%")
+    res_b.metric("VENTA TOTAL USD", f"${venta_total_usd:,.2f}")
+    res_c.metric("GASTOS TOTALES", f"${(venta_total_mxn - flete_cliente):,.2f}")
 
     # Acciones
     st.markdown("### 📤 Finalizar")
@@ -104,21 +113,19 @@ with tab_cotizador:
     
     with a1:
         if st.button("💾 Guardar en Historial", use_container_width=True):
-            # Guardamos el desglose completo
             registro = {
-                "Fecha": datetime.now().strftime("%H:%M:%S"),
+                "Fecha": datetime.now().strftime("%H:%M"),
                 "Cliente": nombre_cliente,
                 "Tipo": tipo_operacion,
                 "Ruta": f"{origen_in}-{destino_in}",
-                "Flete Base": f"${flete_base:,.2f}",
-                "Casetas": f"${c_casetas:,.2f}",
-                "Maniobras": f"${c_maniobras:,.2f}",
-                "Seguro": f"${c_seguro:,.2f}",
-                "Extras ($)": f"${otros_cargos:,.2f}",
+                "Flete": f"${flete_cliente:,.2f}",
+                "Casetas": f"${casetas_cliente:,.2f}",
+                "Maniobras": f"${maniobras_cliente:,.2f}",
+                "Otros/Extras": f"${(venta_total_mxn - flete_cliente - casetas_cliente - maniobras_cliente):,.2f}",
                 "Total MXN": f"${venta_total_mxn:,.2f}"
             }
             st.session_state.historial.insert(0, registro)
-            st.toast("Guardado con desglose")
+            st.toast("Guardado con éxito")
 
     with a2:
         pdf = FPDF()
@@ -128,7 +135,10 @@ with tab_cotizador:
         pdf.set_font("Helvetica", size=10)
         pdf.ln(10)
         pdf.cell(0, 7, f"Ruta: {origen_in} - {destino_in} ({distancia_km:.2f} km)", ln=True)
-        pdf.cell(0, 7, f"Flete: ${flete_base:,.2f} | Gastos/Extras: ${subtotal_gastos:,.2f}", ln=True)
+        pdf.ln(5)
+        pdf.cell(0, 7, f"Servicio de Flete: ${flete_cliente:,.2f}", ln=True)
+        if casetas_cliente > 0: pdf.cell(0, 7, f"Casetas: ${casetas_cliente:,.2f}", ln=True)
+        if maniobras_cliente > 0: pdf.cell(0, 7, f"Maniobras: ${maniobras_cliente:,.2f}", ln=True)
         pdf.ln(5)
         pdf.set_font("Helvetica", "B", 14)
         pdf.cell(0, 10, f"TOTAL: ${venta_total_mxn:,.2f} MXN", ln=True)
@@ -138,18 +148,38 @@ with tab_cotizador:
         if isinstance(pdf_out, str): pdf_buf.write(pdf_out.encode('latin-1'))
         else: pdf_buf.write(pdf_out)
         pdf_buf.seek(0)
-        
         st.download_button("📄 Descargar PDF", pdf_buf, f"Cot_{nombre_cliente}.pdf", "application/pdf", use_container_width=True)
 
     with a3:
-        wa_msg = f"Cotización {nombre_cliente}\nTotal: ${venta_total_mxn:,.2f} MXN"
+        # --- CONSTRUCCIÓN DEL MENSAJE DE WHATSAPP DESGLOSADO ---
+        lineas_wa = [
+            f"*COTIZACIÓN DE SERVICIO LOGÍSTICO ({tipo_operacion})*",
+            f"*Cliente:* {nombre_cliente}",
+            f"------------------------------------",
+            f"*Ruta:* {origen_in} ➡️ {destino_in}",
+            f"*Distancia:* {distancia_km:.2f} km",
+            f"------------------------------------",
+            f"*DESGLOSE DE TARIFAS:*",
+            f"• Flete Base: ${flete_cliente:,.2f}"
+        ]
+        
+        if casetas_cliente > 0: lineas_wa.append(f"• Casetas: ${casetas_cliente:,.2f}")
+        if maniobras_cliente > 0: lineas_wa.append(f"• Maniobras: ${maniobras_cliente:,.2f}")
+        if seguro_cliente > 0: lineas_wa.append(f"• Seguro/Otros: ${seguro_cliente:,.2f}")
+        
+        if extras_lista:
+            lineas_wa.append("*Cargos Adicionales:*")
+            lineas_wa.extend(extras_lista)
+            
+        lineas_wa.append(f"------------------------------------")
+        lineas_wa.append(f"*TOTAL FINAL:* ${venta_total_mxn:,.2f} MXN")
+        lineas_wa.append(f"_(Precios sujetos a cambios sin previo aviso)_")
+        
+        wa_msg = "\n".join(lineas_wa)
         url_wa = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_msg)}"
-        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
+        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar Desglose por WhatsApp</button></a>', unsafe_allow_html=True)
 
 with tab_historial:
-    st.header("📜 Historial de Cotizaciones Detallado")
+    st.header("📜 Historial de Cotizaciones")
     if st.session_state.historial:
-        # Mostramos la tabla con todas las columnas de desglose
         st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
-    else:
-        st.write("No hay registros en esta sesión.")
