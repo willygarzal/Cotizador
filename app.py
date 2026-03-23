@@ -64,64 +64,95 @@ with st.sidebar:
 
     # Lógica Multimoneda
     if moneda_neg == "MXN (Pesos)":
-        ipk_pactado = st.number_input("IPK Objetivo (MXN) $", value=cpk_total_mxn / 0.75)
+        ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (MXN) $", value=cpk_total_mxn / 0.75)
         ipk_mxn_final = ipk_pactado
         moneda_tag = "MXN"
     else:
-        ipk_pactado = st.number_input("IPK Objetivo (USD) $", value=(cpk_total_mxn / 0.75) / tc)
+        ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (USD) $", value=(cpk_total_mxn / 0.75) / tc)
         ipk_mxn_final = ipk_pactado * tc
         moneda_tag = "USD"
 
     margen_real = (1 - (cpk_total_mxn / ipk_mxn_final)) * 100 if ipk_mxn_final > 0 else 0
-    if margen_real < 0: st.error(f"🚨 PÉRDIDA: {margen_real:.1f}%")
-    elif margen_real < 25: st.warning(f"⚠️ Margen: {margen_real:.1f}%")
-    else: st.success(f"🟢 Margen Real: {margen_real:.1f}%")
     
     telefono_wa = st.text_input("WhatsApp Cliente", "521")
 
-# --- 4. ÁREA DE COTIZACIÓN ---
+# --- 4. ÁREA DE COTIZACIÓN (INTERFAZ MEJORADA) ---
 tab_cot, tab_hist = st.tabs(["🎯 Cotizador Pro", "📜 Historial Completo"])
 
 with tab_cot:
-    col_l, col_r = st.columns([2, 1])
+    # --- FILA 1: KPIs Principales (Métricas visuales) ---
+    st.markdown("## Resumen de Cotización (Operación Pura)")
     
-    with col_l:
+    km_final = st.number_input("KM de Ruta (Ajuste 53')", value=km_init, key="km_input_main") 
+
+    col_ruta, col_extras = st.columns([2, 1])
+
+    with col_ruta:
         st.subheader("📍 Ruta y Mapa")
         c1, c2 = st.columns(2)
         orig, dest = c1.text_input("Origen", orig_sug), c2.text_input("Destino", dest_sug)
-        km_final = st.number_input("KM de Ruta (Ajuste 53')", value=km_init)
         
         try:
             res = gmaps.directions(orig, dest)
             if res:
-                m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
-                st.markdown(f'<iframe width="100%" height="300" src="{m_url}"></iframe>', unsafe_allow_html=True)
-        except: pass
+                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
+                 st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
+        except: 
+            st.info("Mapa no disponible (Verifica API Key o Ruta)")
 
-    with col_r:
-        st.subheader("💰 Cargos y Fiscales")
-        casetas, maniobras, cruce = st.number_input("Casetas", 0.0), st.number_input("Maniobras", 0.0), st.number_input("Cruce", 0.0)
-        
-        # CÁLCULOS FISCALES (IVA y Retención SOLO AL FLETE)
+    with col_extras:
+        st.subheader("💰 Cargos Extra")
+        with st.container(border=True):
+            casetas = st.number_input("Casetas", 0.0)
+            maniobras = st.number_input("Maniobras", 0.0)
+            cruce = st.number_input("Cruce", 0.0)
+            total_extras_mxn = casetas + maniobras + cruce
+
+        # CÁLCULOS OPERATIVOS PUROS (Sin Impuestos)
         flete_neto_mxn = km_final * ipk_mxn_final
-        iva_flete = flete_neto_mxn * 0.16
-        ret_flete = flete_neto_mxn * 0.04
-        flete_fiscal_mxn = flete_neto_mxn + iva_flete - ret_flete
-        
-        total_extras_mxn = casetas + maniobras + cruce
-        total_mxn_neto = flete_fiscal_mxn + total_extras_mxn
+        total_mxn_neto = flete_neto_mxn + total_extras_mxn
         total_usd_neto = total_mxn_neto / tc
 
-        st.metric("TOTAL NETO MXN", f"${total_mxn_neto:,.2f}")
-        st.caption(f"Flete Neto: ${flete_neto_mxn:,.2f} | IVA: +${iva_flete:,.2f} | Ret: -${ret_flete:,.2f}")
-        st.metric("TOTAL NETO USD", f"${total_usd_neto:,.2f}")
-        st.metric(f"IPK ({moneda_tag})", f"${ipk_pactado:.2f}", f"{margen_real:.1f}% Margen")
+        with st.expander("📄 Ver Desglose Operativo (MXN)", expanded=False):
+            st.write(f"Flete Base: **${flete_neto_mxn:,.2f}**")
+            st.write(f"(+) Extras: **${total_extras_mxn:,.2f}**")
 
+    # --- FILA 2: METRICAS GRANDES (KPIs) ---
     st.markdown("---")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+    with kpi1:
+        st.metric(label="TOTAL OPERATIVO MXN", value=f"${total_mxn_neto:,.2f}")
+    
+    with kpi2:
+        st.metric(label="TOTAL OPERATIVO USD", value=f"${total_usd_neto:,.2f}", delta=f"TC: {tc}")
+
+    with kpi3:
+        st.metric(label=f"IPK Pactado ({moneda_tag})", value=f"${ipk_pactado:.2f}")
+
+    with kpi4:
+        color_delta = "normal" 
+        if margen_real < 0:
+            color_delta = "inverse" 
+            st.error(f"🚨🚨 ¡PÉRDIDA DETECTADA! ({margen_real:.1f}%) 🚨🚨")
+        elif margen_real < 25:
+            color_delta = "off" 
+            st.warning(f"⚠️ Margen por debajo del objetivo (25%)")
+        
+        st.metric(
+            label="Margen Real", 
+            value=f"{margen_real:.1f}%", 
+            delta=f"{margen_real - 25:.1f}% vs Obj (25%)",
+            delta_color=color_delta
+        )
+
+    # --- FILA 3: ACCIONES ---
+    st.markdown("---")
+    st.subheader("🚀 Acciones")
     a1, a2, a3 = st.columns(3)
 
     with a1:
-        if st.button("💾 Guardar Historial", use_container_width=True):
+        if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
             st.session_state.historial.insert(0, {
                 "Fecha": datetime.now().strftime("%d/%m %H:%M"),
                 "Cliente": nombre_cliente,
@@ -136,10 +167,8 @@ with tab_cot:
                 "Casetas": round(casetas, 2),
                 "Maniobras": round(maniobras, 2),
                 "Cruce": round(cruce, 2),
-                "IVA Flete": round(iva_flete, 2),
-                "Ret Flete": round(ret_flete, 2),
                 "TC": tc,
-                "Total Neto MXN": round(total_mxn_neto, 2),
+                "Total Operativo MXN": round(total_mxn_neto, 2),
                 "Margen %": round(margen_real, 1)
             })
             st.toast(f"✅ Guardado con éxito en {moneda_tag}")
@@ -148,23 +177,24 @@ with tab_cot:
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, f"COTIZACION: {nombre_cliente}", ln=True, align='C')
+        pdf.cell(0, 10, f"COTIZACION OPERATIVA: {nombre_cliente}", ln=True, align='C')
         pdf.set_font("Arial", size=11); pdf.ln(5)
         pdf.cell(0, 7, f"Ruta: {orig} - {dest} ({km_final} km)", ln=True)
         pdf.cell(0, 7, f"IPK Pactado: ${ipk_pactado:.2f} {moneda_tag}", ln=True)
-        pdf.ln(3); pdf.set_font("Arial", "B", 11); pdf.cell(0, 7, "DESGLOSE FISCAL (MXN):", ln=True); pdf.set_font("Arial", size=11)
-        pdf.cell(0, 7, f"Flete Neto: ${flete_neto_mxn:,.2f}", ln=True)
-        pdf.cell(0, 7, f"IVA Flete (16%): ${iva_flete:,.2f}", ln=True)
-        pdf.cell(0, 7, f"Retencion Flete (4%): ${ret_flete:,.2f}", ln=True)
-        pdf.cell(0, 7, f"Extras Netos: ${total_extras_mxn:,.2f}", ln=True)
+        pdf.ln(3); pdf.set_font("Arial", "B", 11); pdf.cell(0, 7, "DESGLOSE DE SERVICIO (MXN):", ln=True); pdf.set_font("Arial", size=11)
+        pdf.cell(0, 7, f"Flete Base: ${flete_neto_mxn:,.2f}", ln=True)
+        pdf.cell(0, 7, f"Cargos Extras: ${total_extras_mxn:,.2f}", ln=True)
         pdf.ln(5); pdf.set_font("Arial", "B", 13)
-        pdf.cell(0, 10, f"TOTAL NETO A PAGAR: ${total_mxn_neto:,.2f} MXN", ln=True)
+        pdf.cell(0, 10, f"TOTAL A PAGAR (Sin Impuestos): ${total_mxn_neto:,.2f} MXN", ln=True)
         pdf.cell(0, 10, f"TOTAL USD (TC {tc}): ${total_usd_neto:,.2f}", ln=True)
-        pdf_out = pdf.output(dest='S').encode('latin-1')
-        st.download_button("📄 Descargar PDF", pdf_out, f"Cot_{orig}.pdf", "application/pdf", use_container_width=True)
+        try:
+            pdf_out = pdf.output(dest='S').encode('latin-1')
+            st.download_button("📄 Descargar PDF", pdf_out, f"Cot_{orig}.pdf", "application/pdf", use_container_width=True)
+        except:
+            st.error("Error generando PDF (caracteres especiales)")
 
     with a3:
-        wa_text = f"*COTIZACIÓN*\n*Cliente:* {nombre_cliente}\n*Ruta:* {orig}-{dest}\n*KM:* {km_final}\n\n*Total:* ${total_mxn_neto:,.2f} MXN"
+        wa_text = f"*COTIZACIÓN*\n*Cliente:* {nombre_cliente}\n*Ruta:* {orig}-{dest}\n*KM:* {km_final}\n\n*Total:* ${total_mxn_neto:,.2f} MXN (Libre de impuestos)"
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
 with tab_hist:
@@ -173,6 +203,6 @@ with tab_hist:
         df_full = pd.DataFrame(st.session_state.historial)
         st.dataframe(df_full, use_container_width=True)
         csv = df_full.to_csv(index=False).encode('utf-8')
-        st.download_button("📊 Exportar Historial (Excel/CSV)", csv, "historial_completo.csv", "text/csv")
+        st.download_button("📊 Exportar Historial (CSV)", csv, "historial_completo.csv", "text/csv")
     else:
         st.info("Aún no hay cotizaciones guardadas.")
