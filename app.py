@@ -18,9 +18,8 @@ st.set_page_config(page_title="Cotizador Maestro 53' Pro - Consolidado", layout=
 if 'historial' not in st.session_state:
     st.session_state.historial = []
 
-# --- DICCIONARIO DE COSTOS DE ACCESORIOS ---
+# --- DICCIONARIO DE COSTOS DE ACCESORIOS (Sin "Ninguno" para el multiselect) ---
 precios_accesorios = {
-    "Ninguno": 0.0,
     "FIANZA": 330.00,
     "CARGA / DESCARGA EN VIVO": 500.00,
     "DEMORAS": 935.00,
@@ -121,25 +120,34 @@ with tab_cot:
             st.markdown("---")
             st.markdown("**Listado de Accesorios**")
             
-            # --- LÓGICA DE CARGOS ADICIONALES AUTOMATIZADA ---
-            tipo_cargo_adicional = st.selectbox("Selecciona el Accesorio", list(precios_accesorios.keys()))
+            # --- NUEVA LÓGICA DE MÚLTIPLES ACCESORIOS ---
+            accesorios_seleccionados = st.multiselect(
+                "Selecciona uno o más accesorios:", 
+                list(precios_accesorios.keys())
+            )
             
-            cantidad_cargo = 0.0
-            costo_cargo = 0.0
-            total_cargo_adicional = 0.0
+            total_accesorios_mxn = 0.0
+            detalle_accesorios = {} # Diccionario para guardar el detalle de lo que seleccionó
             
-            if tipo_cargo_adicional != "Ninguno":
-                costo_default = precios_accesorios[tipo_cargo_adicional]
-                
-                col_c1, col_c2 = st.columns(2)
-                cantidad_cargo = col_c1.number_input("Cantidad", min_value=1.0, value=1.0, step=1.0)
-                # El valor por defecto se jala del diccionario, pero el usuario lo puede editar
-                costo_cargo = col_c2.number_input("Costo Unitario ($)", min_value=0.0, value=float(costo_default), step=50.0)
-                
-                total_cargo_adicional = cantidad_cargo * costo_cargo
-                st.caption(f"Subtotal de {tipo_cargo_adicional}: **${total_cargo_adicional:,.2f}**")
+            if accesorios_seleccionados:
+                st.markdown("*Detalle de cobros:*")
+                for acc in accesorios_seleccionados:
+                    # Se crean columnas dinámicas para cada accesorio seleccionado
+                    col_c1, col_c2 = st.columns(2)
+                    
+                    # Se genera un key único para cada input usando el nombre del accesorio
+                    cant = col_c1.number_input(f"Cant. ({acc})", min_value=1.0, value=1.0, step=1.0, key=f"cant_{acc}")
+                    costo = col_c2.number_input(f"Costo ($) - {acc}", min_value=0.0, value=float(precios_accesorios[acc]), step=50.0, key=f"costo_{acc}")
+                    
+                    subtotal = cant * costo
+                    total_accesorios_mxn += subtotal
+                    
+                    # Guardamos los datos para el PDF y el Historial
+                    detalle_accesorios[acc] = {"cantidad": cant, "costo": costo, "subtotal": subtotal}
+                    
+                    st.caption(f"Subtotal {acc}: **${subtotal:,.2f}**")
 
-            total_extras_mxn = casetas + total_cargo_adicional
+            total_extras_mxn = casetas + total_accesorios_mxn
 
         # CÁLCULOS OPERATIVOS PUROS
         flete_neto_mxn = km_final * ipk_mxn_final
@@ -149,8 +157,11 @@ with tab_cot:
         with st.expander("📄 Ver Desglose Operativo (MXN)", expanded=False):
             st.write(f"Flete Base: **${flete_neto_mxn:,.2f}**")
             st.write(f"(+) Casetas: **${casetas:,.2f}**")
-            if total_cargo_adicional > 0:
-                st.write(f"(+) {tipo_cargo_adicional}: **${total_cargo_adicional:,.2f}**")
+            
+            # Mostramos el desglose dinámico si hay accesorios
+            for acc, datos in detalle_accesorios.items():
+                st.write(f"(+) {acc}: **${datos['subtotal']:,.2f}**")
+                
             st.write(f"**Total Extras: ${total_extras_mxn:,.2f}**")
 
     # --- FILA 2: METRICAS GRANDES (KPIs) ---
@@ -189,6 +200,9 @@ with tab_cot:
 
     with a1:
         if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
+            # Formateamos los accesorios en un texto simple para la tabla de Excel
+            nombres_accesorios = ", ".join(detalle_accesorios.keys()) if detalle_accesorios else "Ninguno"
+            
             st.session_state.historial.insert(0, {
                 "Fecha": datetime.now().strftime("%d/%m %H:%M"),
                 "Cliente": nombre_cliente,
@@ -201,10 +215,8 @@ with tab_cot:
                 "E1": round(e1, 2),
                 "E2": round(e2, 2),
                 "Casetas": round(casetas, 2),
-                "Accesorio": tipo_cargo_adicional,
-                "Cant. Accesorio": cantidad_cargo,
-                "Costo Unit. Accesorio": round(costo_cargo, 2),
-                "Total Accesorio": round(total_cargo_adicional, 2),
+                "Accesorios Incluidos": nombres_accesorios,
+                "Total Accesorios": round(total_accesorios_mxn, 2),
                 "TC": tc,
                 "Total Operativo MXN": round(total_mxn_neto, 2),
                 "Margen %": round(margen_real, 1)
@@ -222,8 +234,15 @@ with tab_cot:
         pdf.ln(3); pdf.set_font("Arial", "B", 11); pdf.cell(0, 7, "DESGLOSE DE SERVICIO (MXN):", ln=True); pdf.set_font("Arial", size=11)
         pdf.cell(0, 7, f"Flete Base: ${flete_neto_mxn:,.2f}", ln=True)
         pdf.cell(0, 7, f"Casetas Grales: ${casetas:,.2f}", ln=True)
-        if total_cargo_adicional > 0:
-            pdf.cell(0, 7, f"{tipo_cargo_adicional} ({cantidad_cargo} x ${costo_cargo}): ${total_cargo_adicional:,.2f}", ln=True)
+        
+        # Iteramos dinámicamente sobre los accesorios para imprimirlos en el PDF
+        if detalle_accesorios:
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(0, 7, "Accesorios Adicionales:", ln=True)
+            pdf.set_font("Arial", size=10)
+            for acc, datos in detalle_accesorios.items():
+                pdf.cell(0, 7, f"  - {acc} ({datos['cantidad']} x ${datos['costo']}): ${datos['subtotal']:,.2f}", ln=True)
+                
         pdf.ln(5); pdf.set_font("Arial", "B", 13)
         pdf.cell(0, 10, f"TOTAL A PAGAR (Sin Impuestos): ${total_mxn_neto:,.2f} MXN", ln=True)
         pdf.cell(0, 10, f"TOTAL USD (TC {tc}): ${total_usd_neto:,.2f}", ln=True)
@@ -235,8 +254,9 @@ with tab_cot:
 
     with a3:
         wa_text = f"*COTIZACIÓN*\n*Cliente:* {nombre_cliente}\n*Ruta:* {orig}-{dest}\n*KM:* {km_final}\n\n*Total:* ${total_mxn_neto:,.2f} MXN (Libre de impuestos)"
-        if total_cargo_adicional > 0:
-            wa_text += f"\n*Incluye:* {tipo_cargo_adicional}"
+        if detalle_accesorios:
+            nombres_wa = ", ".join(detalle_accesorios.keys())
+            wa_text += f"\n*Incluye Accesorios:* {nombres_wa}"
             
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
