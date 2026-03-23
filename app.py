@@ -5,6 +5,7 @@ import urllib.parse
 import pandas as pd
 from datetime import datetime
 import io
+import requests # <--- Nueva librería para la API avanzada de peajes
 
 # --- 1. CONFIGURACIÓN ---
 try:
@@ -18,7 +19,7 @@ st.set_page_config(page_title="Cotizador Maestro 53' Pro - Consolidado", layout=
 if 'historial' not in st.session_state:
     st.session_state.historial = []
 
-# --- DICCIONARIO DE COSTOS DE ACCESORIOS ---
+# --- DICCIONARIOS DE COSTOS ---
 precios_accesorios = {
     "FIANZA": 330.00,
     "CARGA / DESCARGA EN VIVO": 500.00,
@@ -50,15 +51,18 @@ with st.sidebar:
     tc = st.number_input("Tipo de Cambio (MXN/USD)", value=17.50, step=0.1)
     
     st.markdown("---")
-    st.header("⚙️ Negociación")
+    st.header("⚙️ Negociación y Ajustes")
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
+    
+    # El Multiplicador de Peaje para Carga (Convierte tarifa Auto -> Tracto)
+    st.caption("Ajuste de Casetas Automáticas (Auto vs Tracto)")
+    mult_peaje = st.number_input("Multiplicador Carga Pesada (T3S2)", value=2.5, step=0.1)
     
     rutas_filtro = df_ref[df_ref["Tipo"] == tipo_op]
     texto_manual = "Manual (Ruta Nueva)"
     opciones = [texto_manual] + (rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"]).tolist()
     ruta_sel = st.selectbox("Ruta de Tabla:", opciones)
     
-    # Valores sugeridos iniciales
     cpk_init, km_init, orig_sug, dest_sug = 25.0, 1.0, "Monterrey", "Nuevo Laredo"
 
     if ruta_sel != texto_manual:
@@ -84,8 +88,6 @@ with st.sidebar:
         ipk_mxn_final = ipk_pactado * tc
         moneda_tag = "USD"
 
-    # MATEMÁTICA DEL MARGEN: Aquí puedes ver que solo usa CPK total e IPK final. 
-    # Los accesorios no entran en esta ecuación.
     margen_real = (1 - (cpk_total_mxn / ipk_mxn_final)) * 100 if ipk_mxn_final > 0 else 0
     
     telefono_wa = st.text_input("WhatsApp Cliente", "521")
@@ -95,32 +97,85 @@ tab_cot, tab_hist = st.tabs(["🎯 Cotizador Pro", "📜 Historial Completo"])
 
 with tab_cot:
     st.markdown("## Resumen de Cotización (Operación Pura)")
-    
-    km_final = st.number_input("KM de Ruta (Ajuste 53')", value=km_init, key="km_input_main") 
 
     col_ruta, col_extras = st.columns([2, 1])
 
     with col_ruta:
-        st.subheader("📍 Ruta y Mapa")
+        st.subheader("📍 Ruta y Extracción de Peajes")
         c1, c2 = st.columns(2)
-        orig, dest = c1.text_input("Origen", orig_sug), c2.text_input("Destino", dest_sug)
+        orig = c1.text_input("Origen", orig_sug)
+        dest = c2.text_input("Destino", dest_sug)
         
-        try:
-            res = gmaps.directions(orig, dest)
-            if res:
-                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
-                 st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
-        except: 
-            st.info("Mapa no disponible (Verifica API Key o Ruta)")
+        distancia_real_km = km_init
+        costo_peaje_pesado = 0.0
+        
+        # --- NUEVA CONEXIÓN A GOOGLE ROUTES API PARA CASETAS DINÁMICAS ---
+        if orig and dest:
+            try:
+                # 1. Obtenemos el iframe básico visual
+                m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
+                st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
+                
+                # 2. Hacemos la llamada directa a Google Routes API para peajes
+                routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Goog-Api-Key": api_key,
+                    "X-Goog-FieldMask": "routes.distanceMeters,routes.travelAdvisory.tollInfo"
+                }
+                payload = {
+                    "origin": {"address": orig},
+                    "destination": {"address": dest},
+                    "travelMode": "DRIVE",
+                    "extraComputations": ["TOLLS"]
+                }
+                
+                resp = requests.post(routes_url, json=payload, headers=headers)
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if "routes" in data and len(data["routes"]) > 0:
+                        ruta_data = data["routes"][0]
+                        # Extraer Distancia
+                        if "distanceMeters" in ruta_data:
+                            distancia_real_km = round(ruta_data["distanceMeters"] / 1000.0, 1)
+                        
+                        # Extraer Peajes (Casetas)
+                        if "travelAdvisory" in ruta_data and "tollInfo" in ruta_data["travelAdvisory"]:
+                            peajes = ruta_data["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
+                            for peaje in peajes:
+                                # Tomamos la moneda local
+                                if peaje.get("currencyCode") == "MXN":
+                                    costo_auto = float(peaje.get("units", "0")) + (float(peaje.get("nanos", 0)) / 1e9)
+                                    # Aplicamos el multiplicador comercial para tu camión
+                                    costo_peaje_pesado = costo_auto * mult_peaje
+                else:
+                    # Fallback al SDK básico si el nuevo endpoint falla o no está habilitado
+                    res_basico = gmaps.directions(orig, dest)
+                    if res_basico:
+                        distancia_real_km = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
+                        
+            except Exception as e:
+                st.info("Calculando ruta avanzada...")
+
+        km_final = st.number_input("KM de Ruta (Calculado / Ajustable)", value=float(distancia_real_km), key="km_input_main") 
 
     with col_extras:
         st.subheader("💰 Cargos Extra y Accesorios")
         with st.container(border=True):
-            casetas = st.number_input("Casetas Grales. (Ruta)", 0.0)
+            st.markdown("**Cargos Fijos de Ruta**")
+            col_f1, col_f2 = st.columns(2)
+            
+            # Ahora este valor se auto-rellena dinámicamente con la API avanzada
+            casetas = col_f1.number_input("Casetas Grales. Dinámicas ($)", value=float(costo_peaje_pesado))
+            factor_cepac = col_f2.number_input("Factor CEPAC ($/km)", 0.0, format="%.2f")
+            
+            total_cepac = km_final * factor_cepac
+            if total_cepac > 0:
+                st.caption(f"Total CEPAC ({km_final} km x ${factor_cepac}): **${total_cepac:,.2f}**")
             
             st.markdown("---")
-            st.markdown("**Listado de Accesorios**")
-            st.caption("💡 *Nota: Los accesorios se transfieren al cliente al costo. No afectan el % de tu Margen Real.*")
+            st.markdown("**Listado de Accesorios Adicionales**")
             
             accesorios_seleccionados = st.multiselect(
                 "Selecciona uno o más accesorios:", 
@@ -143,16 +198,17 @@ with tab_cot:
                     detalle_accesorios[acc] = {"cantidad": cant, "costo": costo, "subtotal": subtotal}
                     st.caption(f"Subtotal {acc}: **${subtotal:,.2f}**")
 
-            total_extras_mxn = casetas + total_accesorios_mxn
+            total_extras_mxn = casetas + total_cepac + total_accesorios_mxn
 
-        # CÁLCULOS OPERATIVOS PUROS
         flete_neto_mxn = km_final * ipk_mxn_final
         total_mxn_neto = flete_neto_mxn + total_extras_mxn
         total_usd_neto = total_mxn_neto / tc
 
         with st.expander("📄 Ver Desglose Operativo (MXN)", expanded=False):
             st.write(f"Flete Base: **${flete_neto_mxn:,.2f}**")
-            st.write(f"(+) Casetas: **${casetas:,.2f}**")
+            st.write(f"(+) Casetas (API): **${casetas:,.2f}**")
+            if total_cepac > 0:
+                st.write(f"(+) Total CEPAC: **${total_cepac:,.2f}**")
             for acc, datos in detalle_accesorios.items():
                 st.write(f"(+) {acc}: **${datos['subtotal']:,.2f}**")
             st.write(f"**Total Extras: ${total_extras_mxn:,.2f}**")
@@ -179,7 +235,6 @@ with tab_cot:
             color_delta = "off" 
             st.warning(f"⚠️ Margen por debajo del objetivo (25%)")
         
-        # Cambio de texto para dejar clarísimo que es el margen del flete
         st.metric(
             label="Margen Real (Flete Puro)", 
             value=f"{margen_real:.1f}%", 
@@ -200,18 +255,17 @@ with tab_cot:
                 "Fecha": datetime.now().strftime("%d/%m %H:%M"),
                 "Cliente": nombre_cliente,
                 "Ruta": f"{orig}-{dest}",
-                "KM": km_final,
+                "KM Reales": km_final,
                 "Moneda": moneda_tag,
                 "IPK Pactado": round(ipk_pactado, 2),
                 "CPK Base": round(cpk_base, 2),
-                "CPAC": round(cpac, 2),
-                "E1": round(e1, 2),
-                "E2": round(e2, 2),
                 "Casetas": round(casetas, 2),
+                "Factor CEPAC": round(factor_cepac, 2),
+                "Total CEPAC": round(total_cepac, 2),
                 "Accesorios Incluidos": nombres_accesorios,
                 "Total Accesorios": round(total_accesorios_mxn, 2),
                 "TC": tc,
-                "Total Operativo MXN": round(total_mxn_neto, 2),
+                "Total Facturar MXN": round(total_mxn_neto, 2),
                 "Margen Flete %": round(margen_real, 1)
             })
             st.toast(f"✅ Guardado con éxito en {moneda_tag}")
@@ -222,11 +276,13 @@ with tab_cot:
         pdf.set_font("Arial", "B", 16)
         pdf.cell(0, 10, f"COTIZACION OPERATIVA: {nombre_cliente}", ln=True, align='C')
         pdf.set_font("Arial", size=11); pdf.ln(5)
-        pdf.cell(0, 7, f"Ruta: {orig} - {dest} ({km_final} km)", ln=True)
+        pdf.cell(0, 7, f"Ruta: {orig} - {dest} ({km_final} km reales)", ln=True)
         pdf.cell(0, 7, f"IPK Pactado: ${ipk_pactado:.2f} {moneda_tag}", ln=True)
         pdf.ln(3); pdf.set_font("Arial", "B", 11); pdf.cell(0, 7, "DESGLOSE DE SERVICIO (MXN):", ln=True); pdf.set_font("Arial", size=11)
         pdf.cell(0, 7, f"Flete Base: ${flete_neto_mxn:,.2f}", ln=True)
         pdf.cell(0, 7, f"Casetas Grales: ${casetas:,.2f}", ln=True)
+        if total_cepac > 0:
+            pdf.cell(0, 7, f"Total CEPAC (Factor: ${factor_cepac}/km): ${total_cepac:,.2f}", ln=True)
         
         if detalle_accesorios:
             pdf.set_font("Arial", "B", 10)
