@@ -2,7 +2,7 @@ import streamlit as st
 import googlemaps
 from fpdf import FPDF
 import urllib.parse
-import pd
+import pandas as pd
 from datetime import datetime
 import io
 import requests
@@ -283,7 +283,6 @@ with tab_cot:
         pdf.cell(0, 7, f"IPK Pactado: ${ipk_pactado:.2f} {moneda_tag}", ln=True)
         pdf.ln(3); pdf.set_font("Arial", "B", 11); pdf.cell(0, 7, "DESGLOSE DE SERVICIO (MXN):", ln=True); pdf.set_font("Arial", size=11)
         
-        # Estructura de PDF ajustada al estándar que revisamos
         pdf.cell(0, 7, f"Flete Base: ${flete_neto_mxn:,.2f}", ln=True)
         pdf.cell(0, 7, f"Recargo por Combustible (FSC): ${total_fsc_mxn:,.2f}", ln=True)
         pdf.cell(0, 7, f"Casetas Grales: ${casetas:,.2f}", ln=True)
