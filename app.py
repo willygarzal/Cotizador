@@ -2,10 +2,10 @@ import streamlit as st
 import googlemaps
 from fpdf import FPDF
 import urllib.parse
-import pandas as pd
+import pd
 from datetime import datetime
 import io
-import requests # <--- Nueva librería para la API avanzada de peajes
+import requests
 
 # --- 1. CONFIGURACIÓN ---
 try:
@@ -51,10 +51,14 @@ with st.sidebar:
     tc = st.number_input("Tipo de Cambio (MXN/USD)", value=17.50, step=0.1)
     
     st.markdown("---")
+    st.header("⛽ Combustible (FSC)")
+    precio_diesel = st.number_input("Precio Diésel ($/L)", value=24.50, step=0.50)
+    rendimiento = st.number_input("Rendimiento (km/L)", value=2.2, step=0.1)
+    
+    st.markdown("---")
     st.header("⚙️ Negociación y Ajustes")
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
     
-    # El Multiplicador de Peaje para Carga (Convierte tarifa Auto -> Tracto)
     st.caption("Ajuste de Casetas Automáticas (Auto vs Tracto)")
     mult_peaje = st.number_input("Multiplicador Carga Pesada (T3S2)", value=2.5, step=0.1)
     
@@ -109,14 +113,12 @@ with tab_cot:
         distancia_real_km = km_init
         costo_peaje_pesado = 0.0
         
-        # --- NUEVA CONEXIÓN A GOOGLE ROUTES API PARA CASETAS DINÁMICAS ---
+        # --- CONEXIÓN A GOOGLE ROUTES API PARA CASETAS DINÁMICAS ---
         if orig and dest:
             try:
-                # 1. Obtenemos el iframe básico visual
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
                 st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
                 
-                # 2. Hacemos la llamada directa a Google Routes API para peajes
                 routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
                 headers = {
                     "Content-Type": "application/json",
@@ -136,21 +138,16 @@ with tab_cot:
                     data = resp.json()
                     if "routes" in data and len(data["routes"]) > 0:
                         ruta_data = data["routes"][0]
-                        # Extraer Distancia
                         if "distanceMeters" in ruta_data:
                             distancia_real_km = round(ruta_data["distanceMeters"] / 1000.0, 1)
                         
-                        # Extraer Peajes (Casetas)
                         if "travelAdvisory" in ruta_data and "tollInfo" in ruta_data["travelAdvisory"]:
                             peajes = ruta_data["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
                             for peaje in peajes:
-                                # Tomamos la moneda local
                                 if peaje.get("currencyCode") == "MXN":
                                     costo_auto = float(peaje.get("units", "0")) + (float(peaje.get("nanos", 0)) / 1e9)
-                                    # Aplicamos el multiplicador comercial para tu camión
                                     costo_peaje_pesado = costo_auto * mult_peaje
                 else:
-                    # Fallback al SDK básico si el nuevo endpoint falla o no está habilitado
                     res_basico = gmaps.directions(orig, dest)
                     if res_basico:
                         distancia_real_km = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
@@ -160,14 +157,17 @@ with tab_cot:
 
         km_final = st.number_input("KM de Ruta (Calculado / Ajustable)", value=float(distancia_real_km), key="km_input_main") 
 
+        # --- CÁLCULO DINÁMICO DEL FSC (Basado en Opción A) ---
+        total_fsc_mxn = (km_final / rendimiento) * precio_diesel if rendimiento > 0 else 0
+        st.info(f"⛽ **FSC Proyectado:** {km_final} km ÷ {rendimiento} km/L x ${precio_diesel:,.2f} = **${total_fsc_mxn:,.2f} MXN**")
+
     with col_extras:
         st.subheader("💰 Cargos Extra y Accesorios")
         with st.container(border=True):
             st.markdown("**Cargos Fijos de Ruta**")
             col_f1, col_f2 = st.columns(2)
             
-            # Ahora este valor se auto-rellena dinámicamente con la API avanzada
-            casetas = col_f1.number_input("Casetas Grales. Dinámicas ($)", value=float(costo_peaje_pesado))
+            casetas = col_f1.number_input("Casetas Grales. API ($)", value=float(costo_peaje_pesado))
             factor_cepac = col_f2.number_input("Factor CEPAC ($/km)", 0.0, format="%.2f")
             
             total_cepac = km_final * factor_cepac
@@ -201,17 +201,19 @@ with tab_cot:
             total_extras_mxn = casetas + total_cepac + total_accesorios_mxn
 
         flete_neto_mxn = km_final * ipk_mxn_final
-        total_mxn_neto = flete_neto_mxn + total_extras_mxn
+        # Sumamos el FSC al total a facturar
+        total_mxn_neto = flete_neto_mxn + total_extras_mxn + total_fsc_mxn
         total_usd_neto = total_mxn_neto / tc
 
         with st.expander("📄 Ver Desglose Operativo (MXN)", expanded=False):
             st.write(f"Flete Base: **${flete_neto_mxn:,.2f}**")
+            st.write(f"(+) Recargo Combustible (FSC): **${total_fsc_mxn:,.2f}**")
             st.write(f"(+) Casetas (API): **${casetas:,.2f}**")
             if total_cepac > 0:
                 st.write(f"(+) Total CEPAC: **${total_cepac:,.2f}**")
             for acc, datos in detalle_accesorios.items():
                 st.write(f"(+) {acc}: **${datos['subtotal']:,.2f}**")
-            st.write(f"**Total Extras: ${total_extras_mxn:,.2f}**")
+            st.write(f"**Total Cargos: ${(total_extras_mxn + total_fsc_mxn):,.2f}**")
 
     # --- FILA 2: METRICAS GRANDES (KPIs) ---
     st.markdown("---")
@@ -259,6 +261,7 @@ with tab_cot:
                 "Moneda": moneda_tag,
                 "IPK Pactado": round(ipk_pactado, 2),
                 "CPK Base": round(cpk_base, 2),
+                "FSC (Combustible)": round(total_fsc_mxn, 2),
                 "Casetas": round(casetas, 2),
                 "Factor CEPAC": round(factor_cepac, 2),
                 "Total CEPAC": round(total_cepac, 2),
@@ -279,14 +282,18 @@ with tab_cot:
         pdf.cell(0, 7, f"Ruta: {orig} - {dest} ({km_final} km reales)", ln=True)
         pdf.cell(0, 7, f"IPK Pactado: ${ipk_pactado:.2f} {moneda_tag}", ln=True)
         pdf.ln(3); pdf.set_font("Arial", "B", 11); pdf.cell(0, 7, "DESGLOSE DE SERVICIO (MXN):", ln=True); pdf.set_font("Arial", size=11)
+        
+        # Estructura de PDF ajustada al estándar que revisamos
         pdf.cell(0, 7, f"Flete Base: ${flete_neto_mxn:,.2f}", ln=True)
+        pdf.cell(0, 7, f"Recargo por Combustible (FSC): ${total_fsc_mxn:,.2f}", ln=True)
         pdf.cell(0, 7, f"Casetas Grales: ${casetas:,.2f}", ln=True)
+        
         if total_cepac > 0:
-            pdf.cell(0, 7, f"Total CEPAC (Factor: ${factor_cepac}/km): ${total_cepac:,.2f}", ln=True)
+            pdf.cell(0, 7, f"Total CEPAC: ${total_cepac:,.2f}", ln=True)
         
         if detalle_accesorios:
             pdf.set_font("Arial", "B", 10)
-            pdf.cell(0, 7, "Accesorios Adicionales (Transferidos al costo):", ln=True)
+            pdf.cell(0, 7, "Accesorios Adicionales:", ln=True)
             pdf.set_font("Arial", size=10)
             for acc, datos in detalle_accesorios.items():
                 pdf.cell(0, 7, f"  - {acc} ({datos['cantidad']} x ${datos['costo']}): ${datos['subtotal']:,.2f}", ln=True)
@@ -301,7 +308,7 @@ with tab_cot:
             st.error("Error generando PDF (caracteres especiales)")
 
     with a3:
-        wa_text = f"*COTIZACIÓN*\n*Cliente:* {nombre_cliente}\n*Ruta:* {orig}-{dest}\n*KM:* {km_final}\n\n*Total:* ${total_mxn_neto:,.2f} MXN (Libre de impuestos)"
+        wa_text = f"*COTIZACIÓN*\n*Cliente:* {nombre_cliente}\n*Ruta:* {orig}-{dest}\n*KM:* {km_final}\n\n*Desglose Principal:*\n• Flete: ${flete_neto_mxn:,.2f}\n• FSC: ${total_fsc_mxn:,.2f}\n• Casetas: ${casetas:,.2f}\n\n*Total a Facturar:* ${total_mxn_neto:,.2f} MXN (Libre de impuestos)"
         if detalle_accesorios:
             nombres_wa = ", ".join(detalle_accesorios.keys())
             wa_text += f"\n*Incluye Accesorios:* {nombres_wa}"
