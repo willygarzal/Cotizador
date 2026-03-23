@@ -18,7 +18,7 @@ st.set_page_config(page_title="Cotizador Maestro 53' Pro - Consolidado", layout=
 if 'historial' not in st.session_state:
     st.session_state.historial = []
 
-# --- DICCIONARIO DE COSTOS DE ACCESORIOS (Sin "Ninguno" para el multiselect) ---
+# --- DICCIONARIO DE COSTOS DE ACCESORIOS ---
 precios_accesorios = {
     "FIANZA": 330.00,
     "CARGA / DESCARGA EN VIVO": 500.00,
@@ -84,6 +84,8 @@ with st.sidebar:
         ipk_mxn_final = ipk_pactado * tc
         moneda_tag = "USD"
 
+    # MATEMÁTICA DEL MARGEN: Aquí puedes ver que solo usa CPK total e IPK final. 
+    # Los accesorios no entran en esta ecuación.
     margen_real = (1 - (cpk_total_mxn / ipk_mxn_final)) * 100 if ipk_mxn_final > 0 else 0
     
     telefono_wa = st.text_input("WhatsApp Cliente", "521")
@@ -114,37 +116,31 @@ with tab_cot:
     with col_extras:
         st.subheader("💰 Cargos Extra y Accesorios")
         with st.container(border=True):
-            # Cargo Fijo Base
             casetas = st.number_input("Casetas Grales. (Ruta)", 0.0)
             
             st.markdown("---")
             st.markdown("**Listado de Accesorios**")
+            st.caption("💡 *Nota: Los accesorios se transfieren al cliente al costo. No afectan el % de tu Margen Real.*")
             
-            # --- NUEVA LÓGICA DE MÚLTIPLES ACCESORIOS ---
             accesorios_seleccionados = st.multiselect(
                 "Selecciona uno o más accesorios:", 
                 list(precios_accesorios.keys())
             )
             
             total_accesorios_mxn = 0.0
-            detalle_accesorios = {} # Diccionario para guardar el detalle de lo que seleccionó
+            detalle_accesorios = {} 
             
             if accesorios_seleccionados:
                 st.markdown("*Detalle de cobros:*")
                 for acc in accesorios_seleccionados:
-                    # Se crean columnas dinámicas para cada accesorio seleccionado
                     col_c1, col_c2 = st.columns(2)
-                    
-                    # Se genera un key único para cada input usando el nombre del accesorio
                     cant = col_c1.number_input(f"Cant. ({acc})", min_value=1.0, value=1.0, step=1.0, key=f"cant_{acc}")
                     costo = col_c2.number_input(f"Costo ($) - {acc}", min_value=0.0, value=float(precios_accesorios[acc]), step=50.0, key=f"costo_{acc}")
                     
                     subtotal = cant * costo
                     total_accesorios_mxn += subtotal
                     
-                    # Guardamos los datos para el PDF y el Historial
                     detalle_accesorios[acc] = {"cantidad": cant, "costo": costo, "subtotal": subtotal}
-                    
                     st.caption(f"Subtotal {acc}: **${subtotal:,.2f}**")
 
             total_extras_mxn = casetas + total_accesorios_mxn
@@ -157,11 +153,8 @@ with tab_cot:
         with st.expander("📄 Ver Desglose Operativo (MXN)", expanded=False):
             st.write(f"Flete Base: **${flete_neto_mxn:,.2f}**")
             st.write(f"(+) Casetas: **${casetas:,.2f}**")
-            
-            # Mostramos el desglose dinámico si hay accesorios
             for acc, datos in detalle_accesorios.items():
                 st.write(f"(+) {acc}: **${datos['subtotal']:,.2f}**")
-                
             st.write(f"**Total Extras: ${total_extras_mxn:,.2f}**")
 
     # --- FILA 2: METRICAS GRANDES (KPIs) ---
@@ -169,10 +162,10 @@ with tab_cot:
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
     with kpi1:
-        st.metric(label="TOTAL OPERATIVO MXN", value=f"${total_mxn_neto:,.2f}")
+        st.metric(label="TOTAL A FACTURAR MXN", value=f"${total_mxn_neto:,.2f}")
     
     with kpi2:
-        st.metric(label="TOTAL OPERATIVO USD", value=f"${total_usd_neto:,.2f}", delta=f"TC: {tc}")
+        st.metric(label="TOTAL A FACTURAR USD", value=f"${total_usd_neto:,.2f}", delta=f"TC: {tc}")
 
     with kpi3:
         st.metric(label=f"IPK Pactado ({moneda_tag})", value=f"${ipk_pactado:.2f}")
@@ -186,8 +179,9 @@ with tab_cot:
             color_delta = "off" 
             st.warning(f"⚠️ Margen por debajo del objetivo (25%)")
         
+        # Cambio de texto para dejar clarísimo que es el margen del flete
         st.metric(
-            label="Margen Real", 
+            label="Margen Real (Flete Puro)", 
             value=f"{margen_real:.1f}%", 
             delta=f"{margen_real - 25:.1f}% vs Obj (25%)",
             delta_color=color_delta
@@ -200,7 +194,6 @@ with tab_cot:
 
     with a1:
         if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
-            # Formateamos los accesorios en un texto simple para la tabla de Excel
             nombres_accesorios = ", ".join(detalle_accesorios.keys()) if detalle_accesorios else "Ninguno"
             
             st.session_state.historial.insert(0, {
@@ -219,7 +212,7 @@ with tab_cot:
                 "Total Accesorios": round(total_accesorios_mxn, 2),
                 "TC": tc,
                 "Total Operativo MXN": round(total_mxn_neto, 2),
-                "Margen %": round(margen_real, 1)
+                "Margen Flete %": round(margen_real, 1)
             })
             st.toast(f"✅ Guardado con éxito en {moneda_tag}")
 
@@ -235,10 +228,9 @@ with tab_cot:
         pdf.cell(0, 7, f"Flete Base: ${flete_neto_mxn:,.2f}", ln=True)
         pdf.cell(0, 7, f"Casetas Grales: ${casetas:,.2f}", ln=True)
         
-        # Iteramos dinámicamente sobre los accesorios para imprimirlos en el PDF
         if detalle_accesorios:
             pdf.set_font("Arial", "B", 10)
-            pdf.cell(0, 7, "Accesorios Adicionales:", ln=True)
+            pdf.cell(0, 7, "Accesorios Adicionales (Transferidos al costo):", ln=True)
             pdf.set_font("Arial", size=10)
             for acc, datos in detalle_accesorios.items():
                 pdf.cell(0, 7, f"  - {acc} ({datos['cantidad']} x ${datos['costo']}): ${datos['subtotal']:,.2f}", ln=True)
