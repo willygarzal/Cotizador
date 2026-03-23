@@ -18,6 +18,20 @@ st.set_page_config(page_title="Cotizador Maestro 53' Pro - Consolidado", layout=
 if 'historial' not in st.session_state:
     st.session_state.historial = []
 
+# --- DICCIONARIO DE COSTOS DE ACCESORIOS ---
+precios_accesorios = {
+    "Ninguno": 0.0,
+    "FIANZA": 330.00,
+    "CARGA / DESCARGA EN VIVO": 500.00,
+    "DEMORAS": 935.00,
+    "CRUCE": 2341.75,
+    "POSICIONAMIENTO": 1190.00,
+    "LAVADO DE CAJA": 170.00,
+    "FUMIGACION": 552.50,
+    "BASCULA": 935.00,
+    "EQUIPO DE SUJECION": 595.00
+}
+
 # --- 2. BASE DE DATOS DE REFERENCIA ---
 datos_ref = [
     ["EXPO", "MTY-AREA METRO", "NUEVO LAREDO", 230, 26.00, 34.67],
@@ -62,7 +76,6 @@ with st.sidebar:
     
     cpk_total_mxn = cpk_base + cpac + e1 + e2
 
-    # Lógica Multimoneda
     if moneda_neg == "MXN (Pesos)":
         ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (MXN) $", value=cpk_total_mxn / 0.75)
         ipk_mxn_final = ipk_pactado
@@ -80,7 +93,6 @@ with st.sidebar:
 tab_cot, tab_hist = st.tabs(["🎯 Cotizador Pro", "📜 Historial Completo"])
 
 with tab_cot:
-    # --- FILA 1: KPIs Principales (Métricas visuales) ---
     st.markdown("## Resumen de Cotización (Operación Pura)")
     
     km_final = st.number_input("KM de Ruta (Ajuste 53')", value=km_init, key="km_input_main") 
@@ -101,21 +113,45 @@ with tab_cot:
             st.info("Mapa no disponible (Verifica API Key o Ruta)")
 
     with col_extras:
-        st.subheader("💰 Cargos Extra")
+        st.subheader("💰 Cargos Extra y Accesorios")
         with st.container(border=True):
-            casetas = st.number_input("Casetas", 0.0)
-            maniobras = st.number_input("Maniobras", 0.0)
-            cruce = st.number_input("Cruce", 0.0)
-            total_extras_mxn = casetas + maniobras + cruce
+            # Cargo Fijo Base
+            casetas = st.number_input("Casetas Grales. (Ruta)", 0.0)
+            
+            st.markdown("---")
+            st.markdown("**Listado de Accesorios**")
+            
+            # --- LÓGICA DE CARGOS ADICIONALES AUTOMATIZADA ---
+            tipo_cargo_adicional = st.selectbox("Selecciona el Accesorio", list(precios_accesorios.keys()))
+            
+            cantidad_cargo = 0.0
+            costo_cargo = 0.0
+            total_cargo_adicional = 0.0
+            
+            if tipo_cargo_adicional != "Ninguno":
+                costo_default = precios_accesorios[tipo_cargo_adicional]
+                
+                col_c1, col_c2 = st.columns(2)
+                cantidad_cargo = col_c1.number_input("Cantidad", min_value=1.0, value=1.0, step=1.0)
+                # El valor por defecto se jala del diccionario, pero el usuario lo puede editar
+                costo_cargo = col_c2.number_input("Costo Unitario ($)", min_value=0.0, value=float(costo_default), step=50.0)
+                
+                total_cargo_adicional = cantidad_cargo * costo_cargo
+                st.caption(f"Subtotal de {tipo_cargo_adicional}: **${total_cargo_adicional:,.2f}**")
 
-        # CÁLCULOS OPERATIVOS PUROS (Sin Impuestos)
+            total_extras_mxn = casetas + total_cargo_adicional
+
+        # CÁLCULOS OPERATIVOS PUROS
         flete_neto_mxn = km_final * ipk_mxn_final
         total_mxn_neto = flete_neto_mxn + total_extras_mxn
         total_usd_neto = total_mxn_neto / tc
 
         with st.expander("📄 Ver Desglose Operativo (MXN)", expanded=False):
             st.write(f"Flete Base: **${flete_neto_mxn:,.2f}**")
-            st.write(f"(+) Extras: **${total_extras_mxn:,.2f}**")
+            st.write(f"(+) Casetas: **${casetas:,.2f}**")
+            if total_cargo_adicional > 0:
+                st.write(f"(+) {tipo_cargo_adicional}: **${total_cargo_adicional:,.2f}**")
+            st.write(f"**Total Extras: ${total_extras_mxn:,.2f}**")
 
     # --- FILA 2: METRICAS GRANDES (KPIs) ---
     st.markdown("---")
@@ -165,8 +201,10 @@ with tab_cot:
                 "E1": round(e1, 2),
                 "E2": round(e2, 2),
                 "Casetas": round(casetas, 2),
-                "Maniobras": round(maniobras, 2),
-                "Cruce": round(cruce, 2),
+                "Accesorio": tipo_cargo_adicional,
+                "Cant. Accesorio": cantidad_cargo,
+                "Costo Unit. Accesorio": round(costo_cargo, 2),
+                "Total Accesorio": round(total_cargo_adicional, 2),
                 "TC": tc,
                 "Total Operativo MXN": round(total_mxn_neto, 2),
                 "Margen %": round(margen_real, 1)
@@ -183,7 +221,9 @@ with tab_cot:
         pdf.cell(0, 7, f"IPK Pactado: ${ipk_pactado:.2f} {moneda_tag}", ln=True)
         pdf.ln(3); pdf.set_font("Arial", "B", 11); pdf.cell(0, 7, "DESGLOSE DE SERVICIO (MXN):", ln=True); pdf.set_font("Arial", size=11)
         pdf.cell(0, 7, f"Flete Base: ${flete_neto_mxn:,.2f}", ln=True)
-        pdf.cell(0, 7, f"Cargos Extras: ${total_extras_mxn:,.2f}", ln=True)
+        pdf.cell(0, 7, f"Casetas Grales: ${casetas:,.2f}", ln=True)
+        if total_cargo_adicional > 0:
+            pdf.cell(0, 7, f"{tipo_cargo_adicional} ({cantidad_cargo} x ${costo_cargo}): ${total_cargo_adicional:,.2f}", ln=True)
         pdf.ln(5); pdf.set_font("Arial", "B", 13)
         pdf.cell(0, 10, f"TOTAL A PAGAR (Sin Impuestos): ${total_mxn_neto:,.2f} MXN", ln=True)
         pdf.cell(0, 10, f"TOTAL USD (TC {tc}): ${total_usd_neto:,.2f}", ln=True)
@@ -195,6 +235,9 @@ with tab_cot:
 
     with a3:
         wa_text = f"*COTIZACIÓN*\n*Cliente:* {nombre_cliente}\n*Ruta:* {orig}-{dest}\n*KM:* {km_final}\n\n*Total:* ${total_mxn_neto:,.2f} MXN (Libre de impuestos)"
+        if total_cargo_adicional > 0:
+            wa_text += f"\n*Incluye:* {tipo_cargo_adicional}"
+            
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
 with tab_hist:
