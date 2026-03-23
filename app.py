@@ -51,6 +51,11 @@ df_ref = pd.DataFrame(datos_ref, columns=["Tipo", "Origen", "Destino", "KM_Ref",
 # --- 3. BARRA LATERAL (LÓGICA DE NEGOCIACIÓN) ---
 with st.sidebar:
     st.header("👤 Datos de Cotización")
+    empresa_remitente = st.text_input("Nuestra Empresa", "RL TRANSPORTACIONES")
+    nombre_remitente = st.text_input("Nuestro Representante", "Gilberto Ochoa Sepúlveda")
+    lugar_expedicion = st.text_input("Lugar de Expedición", "Pesquería N. L.")
+    
+    st.markdown("---")
     empresa_cliente = st.text_input("Para: (Empresa)", "Comercializadora México Americana")
     atencion_cliente = st.text_input("Atención: (Contacto)", "Iker Aldape Uribares")
     tipo_op = st.selectbox("Servicio", ["Importación", "Exportación", "Nacional"])
@@ -260,7 +265,10 @@ with tab_cot:
     st.subheader("🚀 Acciones")
     a1, a2, a3 = st.columns(3)
 
-    fecha_hoy = datetime.now().strftime("%d/%m/%Y")
+    # Formateo de fecha al estilo del PDF: "febrero 27, 2026"
+    meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+    fecha_hoy_dt = datetime.now()
+    fecha_texto = f"{meses[fecha_hoy_dt.month - 1]} {fecha_hoy_dt.day}, {fecha_hoy_dt.year}"
 
     with a1:
         if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
@@ -291,101 +299,152 @@ with tab_cot:
         pdf = FPDF()
         pdf.add_page()
         
-        # Encabezado
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, "COTIZACIÓN", ln=True, align='R')
+        # --- ENCABEZADO Y LOGO TEXTUAL ---
+        pdf.set_font("Arial", "B", 20)
+        pdf.set_text_color(0, 51, 102) # Azul oscuro para dar aspecto corporativo
+        pdf.cell(0, 10, empresa_remitente, ln=True, align='L')
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 8, "COTIZACIÓN", ln=True, align='R')
+        
+        # --- FECHA Y LUGAR ---
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 5, f"{lugar_expedicion} {fecha_texto}", ln=True, align='R')
         pdf.ln(5)
         
-        # Datos del Cliente y Fecha
-        pdf.set_font("Arial", "", 11)
-        pdf.cell(0, 6, f"Fecha: {fecha_hoy}", ln=True)
-        pdf.cell(0, 6, f"Para: {empresa_cliente}", ln=True)
-        pdf.cell(0, 6, f"Atención: {atencion_cliente}", ln=True)
-        pdf.ln(10)
-        
-        # Detalles de la Ruta
-        pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 7, "Detalles del Servicio:", ln=True)
-        pdf.set_font("Arial", "", 11)
-        pdf.cell(0, 6, f"Origen: {orig}", ln=True)
-        pdf.cell(0, 6, f"Destino: {dest}", ln=True)
-        pdf.cell(0, 6, f"Servicio: {tipo_op}", ln=True)
-        pdf.cell(0, 6, f"KMS: {km_final}", ln=True)
+        # --- DATOS DEL CLIENTE ---
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(0, 5, f"Para. {empresa_cliente}", ln=True)
+        pdf.cell(0, 5, f"Atención. {atencion_cliente}", ln=True)
         pdf.ln(5)
         
-        # Desglose de Tarifas
-        pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 7, "Desglose de Tarifas:", ln=True)
-        pdf.set_font("Arial", "", 11)
-        pdf.cell(0, 6, f"Flete: ${flete_neto_mxn:,.2f}", ln=True)
-        pdf.cell(0, 6, f"Casetas: ${casetas:,.2f}", ln=True)
-        pdf.cell(0, 6, f"FSC: ${total_fsc_mxn:,.2f}", ln=True)
+        # --- INTRODUCCIÓN ---
+        pdf.set_font("Arial", "", 10)
+        pdf.multi_cell(0, 5, "Por medio de la presente cotización, informo a usted las tarifas que actualmente manejamos en las siguientes rutas y/o servicios:")
+        pdf.ln(4)
         
-        if total_cepac > 0:
-            pdf.cell(0, 6, f"CEPAC: ${total_cepac:,.2f}", ln=True)
-            
-        if detalle_accesorios:
-            pdf.ln(2)
-            pdf.set_font("Arial", "I", 10)
-            pdf.cell(0, 6, "Cargos Adicionales / Accesorios:", ln=True)
-            pdf.set_font("Arial", "", 10)
+        # --- TABLA EXACTA DEL FORMATO ---
+        pdf.set_font("Arial", "B", 8)
+        pdf.set_fill_color(220, 220, 220)
+        # Anchos de columna que sumen ~190 (ancho de hoja)
+        w_orig = 35; w_dest = 35; w_serv = 20; w_kms = 15; w_flete = 20; w_cas = 20; w_fsc = 20; w_tot = 25
+        
+        pdf.cell(w_orig, 8, "Origen", border=1, fill=True, align='C')
+        pdf.cell(w_dest, 8, "Destino", border=1, fill=True, align='C')
+        pdf.cell(w_serv, 8, "Servicio", border=1, fill=True, align='C')
+        pdf.cell(w_kms, 8, "KMS", border=1, fill=True, align='C')
+        pdf.cell(w_flete, 8, "Flete", border=1, fill=True, align='C')
+        pdf.cell(w_cas, 8, "Casetas", border=1, fill=True, align='C')
+        pdf.cell(w_fsc, 8, "FSC", border=1, fill=True, align='C')
+        pdf.cell(w_tot, 8, "Total", border=1, fill=True, align='C')
+        pdf.ln()
+        
+        pdf.set_font("Arial", "", 8)
+        # Recorte de nombres para que entren en la celda
+        pdf.cell(w_orig, 8, orig[:20], border=1, align='C')
+        pdf.cell(w_dest, 8, dest[:20], border=1, align='C')
+        pdf.cell(w_serv, 8, tipo_op, border=1, align='C')
+        pdf.cell(w_kms, 8, str(km_final), border=1, align='C')
+        pdf.cell(w_flete, 8, f"${flete_neto_mxn:,.2f}", border=1, align='C')
+        pdf.cell(w_cas, 8, f"${casetas:,.2f}", border=1, align='C')
+        pdf.cell(w_fsc, 8, f"${total_fsc_mxn:,.2f}", border=1, align='C')
+        pdf.cell(w_tot, 8, f"${total_mxn_neto:,.2f}", border=1, align='C')
+        pdf.ln(8)
+        
+        if total_cepac > 0 or detalle_accesorios:
+            pdf.set_font("Arial", "B", 8)
+            pdf.cell(0, 5, "Cargos Adicionales Cotizados:", ln=True)
+            pdf.set_font("Arial", "", 8)
+            if total_cepac > 0:
+                pdf.cell(0, 5, f"  - CEPAC Operativo: ${total_cepac:,.2f}", ln=True)
             for acc, datos in detalle_accesorios.items():
-                pdf.cell(0, 6, f"  - {acc}: ${datos['subtotal']:,.2f}", ln=True)
-                
-        pdf.ln(5)
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, f"Total: ${total_mxn_neto:,.2f} {moneda_tag}", ln=True)
+                pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${datos['subtotal']:,.2f}", ln=True)
+            pdf.ln(2)
+
+        # --- CLÁUSULAS (LETRAS CHIQUITAS EXACTAS) ---
+        pdf.ln(3)
+        pdf.set_font("Arial", "B", 9)
+        pdf.cell(0, 5, "Caja Regular", ln=True)
+        pdf.cell(0, 5, "No materiales peligrosos", ln=True)
+        pdf.ln(2)
         
-        # Cláusulas legales (letras chiquitas)
-        pdf.ln(10)
-        pdf.set_font("Arial", "", 9)
-        clausulas = (
-            "La mercancía viaja asegurada por cuenta y riesgo del cliente.\n"
-            "El cliente es responsable por el cuidado de nuestros remolques (daños y robo) tanto con sus proveedores o clientes, como en sus instalaciones.\n"
-            "Libre de maniobras de carga y descarga.\n"
-            "Términos de pago, 15 días de crédito.\n"
-            "Importes en Moneda Nacional antes de Impuestos."
+        pdf.set_font("Arial", "", 8)
+        clausulas_str = (
+            "Propuesta vigente por 30 días para su aceptación, posteriormente será válida por 12 meses. Sujeto a disponibilidad de equipo.\n\n"
+            "EL COSTO POR VARIACION DE DIESEL (FSC) SE ACTUALIZARÁ DE ACUERDO AL COMPORTAMIENTO DE LOS PRECIOS EN COMBUSTIBLES.\n\n"
+            "Las tarifas presentadas, son calculadas de acuerdo con la asignación conjunta de los volúmenes por viajes domésticos, de importación o exportación.\n\n"
+            "• Máximo 22 toneladas.\n"
+            "• Libre de maniobras de carga y descarga.\n"
+            "• La mercancía viaja asegurada por cuenta y riesgo del cliente.\n"
+            "• El cliente es responsable por el cuidado de nuestros remolques (daños y robo) tanto con sus proveedores o clientes, como en sus instalaciones.\n"
+            "• Paradas adicionales, dentro del recorrido natural de la ruta $2,610.00 MXN, en desviaciones, cargo por kilometraje recorrido.\n"
+            "• Servicios cancelados, tienen costo de $2,610.00 MXN por movimiento en falso.\n"
+            "• Sí no cuentan con sellos de seguridad y requieren que los provea H GT, el costo es de $130.00 MXN cada uno.\n"
+            "• Máximo tres horas para maniobras de carga y tres para descarga, la hora adicional se factura a $435.00 MXN.\n"
+            "• Cajas en plantas máximo tres días para salir cargadas o vacías, a partir del 4to. día, generan cargos por concepto de demoras $1,045.00 MXN por caja por día.\n"
+            "• Cruces en fines de semana y/o días festivos tienen un costo del 30% adicional.\n"
+            "• La variación se actualiza mensualmente.\n"
+            "• Equipo de sujeción se cobra por aparte.\n"
+            "• Términos de pago, 15 días de crédito.\n\n"
+            "Para mejor servicio, por favor programe con anticipación sus requerimientos.\n"
+            "Importes en Moneda Nacional antes de Impuestos. Sujeto a lo dispuesto en la Ley del Impuesto al Valor Agregado."
         )
-        pdf.multi_cell(0, 5, clausulas)
+        pdf.multi_cell(0, 4, clausulas_str)
         
-        # Firmas de Aceptación
-        pdf.ln(20)
-        pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 7, "Acepto Tarifas y Condiciones", ln=True, align='C')
-        pdf.ln(15)
-        pdf.cell(0, 5, "___________________________________", ln=True, align='C')
-        pdf.set_font("Arial", "", 11)
-        pdf.cell(0, 6, f"{atencion_cliente}", ln=True, align='C')
-        pdf.cell(0, 6, f"{empresa_cliente}", ln=True, align='C')
+        # --- CIERRE Y FIRMAS ---
+        pdf.ln(5)
+        pdf.cell(0, 5, "Esperando recibir su preferencia, quedo a sus órdenes.", ln=True)
+        pdf.ln(8)
+        
+        # Firmas alineadas (Tú a la izquierda, Cliente a la derecha)
+        pdf.set_font("Arial", "B", 9)
+        pdf.cell(95, 5, "Atentamente", align='C')
+        pdf.cell(95, 5, "Acepto Tarifas y Condiciones", align='C', ln=True)
+        pdf.ln(12)
+        
+        pdf.cell(95, 5, "___________________________________", align='C')
+        pdf.cell(95, 5, "___________________________________", align='C', ln=True)
+        
+        pdf.set_font("Arial", "", 9)
+        pdf.cell(95, 5, nombre_remitente, align='C')
+        pdf.cell(95, 5, atencion_cliente, align='C', ln=True)
+        pdf.cell(95, 5, empresa_remitente, align='C')
+        pdf.cell(95, 5, empresa_cliente, align='C', ln=True)
 
         try:
             pdf_out = pdf.output(dest='S').encode('latin-1')
-            st.download_button("📄 Descargar PDF", pdf_out, f"Cot_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
+            st.download_button("📄 Descargar PDF", pdf_out, f"Cotizacion_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
         except:
             st.error("Error generando PDF (caracteres especiales)")
 
     with a3:
-        # Formato exacto para WhatsApp
-        wa_text = f"*COTIZACIÓN*\n\n"
-        wa_text += f"*Fecha:* {fecha_hoy}\n"
+        # --- MENSAJE DE WHATSAPP CON FORMATO ---
+        wa_text = f"*{empresa_remitente} - COTIZACIÓN*\n\n"
+        wa_text += f"*Fecha:* {fecha_texto}\n"
         wa_text += f"*Para:* {empresa_cliente}\n"
         wa_text += f"*Atención:* {atencion_cliente}\n\n"
-        wa_text += f"*Origen:* {orig}\n"
-        wa_text += f"*Destino:* {dest}\n"
-        wa_text += f"*Servicio:* {tipo_op}\n"
-        wa_text += f"*KMS:* {km_final}\n\n"
-        wa_text += f"*Flete:* ${flete_neto_mxn:,.2f}\n"
-        wa_text += f"*Casetas:* ${casetas:,.2f}\n"
-        wa_text += f"*FSC:* ${total_fsc_mxn:,.2f}\n"
+        wa_text += f"Por medio de la presente, informo las tarifas de servicio:\n\n"
+        wa_text += f"📍 *Origen:* {orig}\n"
+        wa_text += f"📍 *Destino:* {dest}\n"
+        wa_text += f"🚛 *Servicio:* {tipo_op} | {km_final} KMS\n\n"
+        wa_text += f"*-- DESGLOSE --*\n"
+        wa_text += f"• *Flete:* ${flete_neto_mxn:,.2f}\n"
+        wa_text += f"• *Casetas:* ${casetas:,.2f}\n"
+        wa_text += f"• *FSC:* ${total_fsc_mxn:,.2f}\n"
         
         if total_cepac > 0:
-            wa_text += f"*CEPAC:* ${total_cepac:,.2f}\n"
+            wa_text += f"• *CEPAC:* ${total_cepac:,.2f}\n"
             
         if detalle_accesorios:
             for acc, datos in detalle_accesorios.items():
-                wa_text += f"*{acc}:* ${datos['subtotal']:,.2f}\n"
+                wa_text += f"• *{acc}:* ${datos['subtotal']:,.2f}\n"
                 
-        wa_text += f"\n*Total:* ${total_mxn_neto:,.2f} {moneda_tag}\n\n"
+        wa_text += f"\n💰 *TOTAL:* ${total_mxn_neto:,.2f} {moneda_tag} (Antes de IVA)\n\n"
+        wa_text += f"⚠️ *Condiciones Principales:*\n"
+        wa_text += f"- Vigencia 30 días.\n"
+        wa_text += f"- FSC se actualiza al mercado.\n"
+        wa_text += f"- Máx 22 Tons. Libre maniobras.\n"
+        wa_text += f"- Crédito a 15 días.\n\n"
         wa_text += f"_{atencion_cliente}_\n_{empresa_cliente}_\n*Acepto Tarifas y Condiciones*"
             
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
