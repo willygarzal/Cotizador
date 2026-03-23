@@ -16,196 +16,218 @@ except Exception:
 
 st.set_page_config(page_title="Cotizador Maestro RL", layout="wide")
 
-# Inicializar estados de sesión
+# Inicializar el "Carrito" de rutas si no existe
 if 'cotizacion_actual' not in st.session_state:
     st.session_state.cotizacion_actual = []
-if 'historial' not in st.session_state:
-    st.session_state.historial = []
+if 'historial_eterno' not in st.session_state:
+    st.session_state.historial_eterno = []
 
-# --- 2. CONSTANTES Y PRECIOS ---
-RENDIMIENTO_BASE = 2.7
+# --- DICCIONARIO DE ACCESORIOS (Precios Walmart) ---
 precios_accesorios = {
     "SELLOS DE SEGURIDAD": 130.00,
     "HORA ADICIONAL MANIOBRA": 435.00,
     "DEMORAS CAJA PLANTA (4to DÍA)": 1045.00,
     "MOVIMIENTO EN FALSO / CANCELACIÓN": 2610.00,
     "PARADA ADICIONAL / DESVIACIÓN": 2610.00,
-    "CRUCE": 2341.75,
     "LAVADO DE CAJA": 170.00,
+    "FUMIGACION": 552.50,
     "BASCULA": 935.00
 }
 
-# --- 3. BARRA LATERAL (DATOS MAESTROS) ---
+# --- 3. BARRA LATERAL (CONTROLES MAESTROS) ---
 with st.sidebar:
-    st.header("👤 Datos de la Cotización")
-    # Campos en blanco por defecto
-    empresa_cliente = st.text_input("Para: (Empresa)", value="", placeholder="Nombre del Cliente")
+    st.header("👤 Datos del Cliente")
+    # CAMBIO: Se eliminan los nombres predeterminados para obligar a captura nueva
+    empresa_cliente = st.text_input("Para: (Empresa)", value="", placeholder="Nombre de la empresa")
     atencion_cliente = st.text_input("Atención: (Contacto)", value="", placeholder="Persona de contacto")
+    tc = st.number_input("Tipo de Cambio", value=17.50, step=0.1)
     
     st.markdown("---")
-    st.header("⛽ Combustible (FSC)")
-    # Precio del diésel ajustable, rendimiento bloqueado a 2.7
+    st.header("⛽ Parámetros Diésel")
     precio_diesel = st.number_input("Precio Diésel ($/L)", value=21.30, step=0.1)
-    st.info(f"Rendimiento estándar: {RENDIMIENTO_BASE} km/L")
+    # Rendimiento fijado en 2.7 km/l según estándar operativo
+    rendimiento_fijo = 2.7 
+    st.caption(f"Rendimiento base: {rendimiento_fijo} km/L")
 
     st.markdown("---")
-    st.header("⚙️ Ajustes de Operación")
-    tipo_op = st.selectbox("Servicio", ["Importación", "Exportación", "Nacional"])
-    tc = st.number_input("Tipo de Cambio", value=17.50, step=0.1)
+    st.header("⚙️ Configuración de Ruta")
+    tipo_op = st.selectbox("Tipo de Servicio", ["Importación", "Exportación", "Nacional"])
     mult_peaje = st.number_input("Multiplicador Casetas (T3S2)", value=2.5, step=0.1)
     
-    st.subheader("📊 Rentabilidad Interna")
-    ipk_base = st.number_input("IPK Objetivo (MXN/km)", value=15.27)
+    # Lógica de IPK / Margen (Interno)
+    st.subheader("📊 Rentabilidad (Interna)")
+    cpk_base = st.number_input("CPK Base (MXN) $", value=25.0)
+    ipk_objetivo = st.number_input("IPK Objetivo (MXN) $", value=cpk_base / 0.75)
     
-    telefono_wa = st.text_input("WhatsApp Cliente", "521")
+    telefono_wa = st.text_input("WhatsApp para envío", value="521", placeholder="521XXXXXXXXXX")
 
 # --- 4. ÁREA DE TRABAJO ---
-tab_cot, tab_resumen, tab_hist = st.tabs(["📍 Configurar Rutas", "📄 Cotización Final", "📜 Historial"])
+tab_cot, tab_resumen = st.tabs(["📍 Configurar Rutas", "📄 Generar Cotización Final"])
 
 with tab_cot:
     col_mapa, col_datos = st.columns([2, 1])
     
     with col_mapa:
-        st.subheader("🗺️ Ruta")
+        st.subheader("🗺️ Definir Trayecto")
         c1, c2 = st.columns(2)
-        orig = c1.text_input("Origen", value="", placeholder="Ej. Nuevo Laredo")
-        dest = c2.text_input("Destino", value="", placeholder="Ej. Silao")
+        # CAMBIO: Se eliminan las rutas predeterminadas
+        orig = c1.text_input("Origen", value="", placeholder="Ej: Nuevo Laredo, Tamps.")
+        dest = c2.text_input("Destino", value="", placeholder="Ej: Silao, Gto.")
         
-        km_auto, casetas_auto = 0.0, 0.0
+        km_auto = 0.0
+        casetas_auto = 0.0
         
         if orig and dest:
             try:
-                # Routes API para Casetas y KM
-                url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+                # Llamada a Routes API para KM y Casetas
+                routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
                 headers = {"Content-Type": "application/json", "X-Goog-Api-Key": api_key,
                            "X-Goog-FieldMask": "routes.distanceMeters,routes.travelAdvisory.tollInfo"}
                 payload = {"origin": {"address": orig}, "destination": {"address": dest},
                            "travelMode": "DRIVE", "extraComputations": ["TOLLS"]}
                 
-                resp = requests.post(url, json=payload, headers=headers)
+                resp = requests.post(routes_url, json=payload, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
-                    if "routes" in data:
-                        r_data = data["routes"][0]
-                        km_auto = round(r_data.get("distanceMeters", 0) / 1000.0, 0)
-                        if "travelAdvisory" in r_data and "tollInfo" in r_data["travelAdvisory"]:
-                            tolls = r_data["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
-                            for t in tolls:
-                                if t.get("currencyCode") == "MXN":
-                                    casetas_auto = float(t.get("units", 0)) + (float(t.get("nanos", 0))/1e9)
+                    if "routes" in data and len(data["routes"]) > 0:
+                        ruta = data["routes"][0]
+                        km_auto = round(ruta.get("distanceMeters", 0) / 1000.0, 1)
+                        if "travelAdvisory" in ruta and "tollInfo" in ruta["travelAdvisory"]:
+                            peajes = ruta["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
+                            for p in peajes:
+                                if p.get("currencyCode") == "MXN":
+                                    casetas_auto = float(p.get("units", 0)) + (float(p.get("nanos", 0))/1e9)
                 
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
                 st.markdown(f'<iframe width="100%" height="300" src="{m_url}"></iframe>', unsafe_allow_html=True)
-            except: st.warning("Ingrese una ruta válida.")
+            except: st.warning("Error conectando con Google Maps")
 
     with col_datos:
-        st.subheader("💰 Desglose")
-        kms = st.number_input("KMS", value=float(km_auto))
-        flete = st.number_input("Flete", value=float(kms * ipk_base))
-        casetas = st.number_input("Casetas", value=float(casetas_auto * mult_peaje))
+        st.subheader("💰 Valores de esta Ruta")
+        km_final = st.number_input("KMS Reales", value=float(km_auto))
+        flete_sug = km_final * ipk_objetivo
+        flete_final = st.number_input("Flete ($)", value=float(flete_sug))
         
-        # FÓRMULA MAESTRA: (KM / 2.7) * PRECIO DIESEL
-        fsc = (kms / RENDIMIENTO_BASE) * precio_diesel if kms > 0 else 0
-        st.write(f"**FSC:** ${fsc:,.2f}")
+        casetas_final = st.number_input("Casetas ($)", value=float(casetas_auto * mult_peaje))
         
-        total_r = flete + casetas + fsc
-        st.metric("Total Ruta", f"${total_r:,.2f}")
+        # Cálculo FSC con tu regla de 2.7
+        fsc_final = (km_final / rendimiento_fijo) * precio_diesel
+        st.write(f"**FSC (Combustible):** ${fsc_final:,.2f}")
+        
+        total_ruta = flete_final + casetas_final + fsc_final
+        st.metric("Subtotal Ruta", f"${total_ruta:,.2f}")
 
         if st.button("➕ Agregar Ruta a la Propuesta", use_container_width=True, type="primary"):
             if not orig or not dest:
-                st.error("Faltan datos de ruta.")
+                st.error("⚠️ Debes ingresar un Origen y Destino válido antes de agregar.")
             else:
-                st.session_state.cotizacion_actual.append({
+                nueva_fila = {
                     "Origen": orig, "Destino": dest, "Servicio": tipo_op,
-                    "KMS": int(kms), "Flete": flete, "Casetas": casetas,
-                    "FSC": fsc, "Total": total_r
-                })
-                st.success("Ruta agregada.")
+                    "KMS": km_final, "Flete": flete_final, "Casetas": casetas_final,
+                    "FSC": fsc_final, "Total": total_ruta
+                }
+                st.session_state.cotizacion_actual.append(nueva_fila)
+                st.toast("Ruta agregada correctamente")
 
 with tab_resumen:
     if st.session_state.cotizacion_actual:
-        df_res = pd.DataFrame(st.session_state.cotizacion_actual)
-        st.table(df_res.style.format({"Flete": "${:,.2f}", "Casetas": "${:,.2f}", "FSC": "${:,.2f}", "Total": "${:,.2f}"}))
+        df_view = pd.DataFrame(st.session_state.cotizacion_actual)
+        st.table(df_view)
         
-        total_global = df_res["Total"].sum()
+        gran_total = df_view["Total"].sum()
+        st.subheader(f"Total Global de Cotización: ${gran_total:,.2f} MXN")
         
-        # Accesorios
-        st.subheader("➕ Cargos Adicionales")
-        acc_sel = st.multiselect("Seleccionar accesorios:", list(precios_accesorios.keys()))
-        t_acc = sum([precios_accesorios[a] for a in acc_sel])
-        total_final = total_global + t_acc
-        
-        st.metric("TOTAL GLOBAL A FACTURAR (SIN IVA)", f"${total_final:,.2f} MXN")
-
-        if st.button("🗑️ Limpiar Todo"):
+        if st.button("🗑️ Limpiar Cotización", type="secondary"):
             st.session_state.cotizacion_actual = []
             st.rerun()
 
         st.markdown("---")
-        c1, c2 = st.columns(2)
+        # --- GENERACIÓN DE PDF Y WHATSAPP ---
+        c_pdf, c_wa = st.columns(2)
         
-        with c1:
-            if not empresa_cliente: st.warning("Capture el nombre del cliente.")
+        with c_pdf:
+            # Validación para asegurar que el usuario llenó los datos del cliente
+            if not empresa_cliente or not atencion_cliente:
+                st.warning("⚠️ Completa 'Para' y 'Atención' en la barra lateral para habilitar el PDF.")
             else:
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_font("Arial", "B", 16)
                 pdf.cell(0, 10, "RL TRANSPORTACIONES", ln=True)
-                pdf.set_font("Arial", "", 10)
-                pdf.cell(0, 5, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", ln=True, align='R')
-                pdf.ln(5)
-                pdf.set_font("Arial", "B", 11)
-                pdf.cell(0, 6, f"Para: {empresa_cliente}", ln=True)
-                pdf.cell(0, 6, f"Atención: {atencion_cliente}", ln=True)
+                pdf.set_font("Arial", "B", 12)
+                pdf.cell(0, 10, f"COTIZACIÓN - {datetime.now().strftime('%d/%m/%Y')}", ln=True, align='R')
                 pdf.ln(5)
                 
-                # Tabla
+                pdf.set_font("Arial", "", 10)
+                pdf.cell(0, 5, f"Para: {empresa_cliente}", ln=True)
+                pdf.cell(0, 5, f"Atención: {atencion_cliente}", ln=True)
+                pdf.ln(5)
+                
+                # Encabezados de Tabla
                 pdf.set_font("Arial", "B", 8)
-                pdf.set_fill_color(220)
-                h = ["Origen", "Destino", "KMS", "Flete", "Casetas", "FSC", "Total"]
+                pdf.set_fill_color(230)
+                headers = ["Origen", "Destino", "KMS", "Flete", "Casetas", "FSC", "Total"]
                 w = [35, 35, 15, 25, 25, 25, 30]
-                for i in range(len(h)): pdf.cell(w[i], 8, h[i], 1, 0, 'C', True)
+                for i in range(len(headers)):
+                    pdf.cell(w[i], 7, headers[i], border=1, fill=True, align='C')
                 pdf.ln()
                 
+                # Filas del Carrito
                 pdf.set_font("Arial", "", 8)
                 for r in st.session_state.cotizacion_actual:
-                    pdf.cell(w[0], 8, r["Origen"][:20], 1); pdf.cell(w[1], 8, r["Destino"][:20], 1)
-                    pdf.cell(w[2], 8, str(r["KMS"]), 1, 0, 'C'); pdf.cell(w[3], 8, f"${r['Flete']:,.2f}", 1, 0, 'R')
-                    pdf.cell(w[4], 8, f"${r['Casetas']:,.2f}", 1, 0, 'R'); pdf.cell(w[5], 8, f"${r['FSC']:,.2f}", 1, 0, 'R')
-                    pdf.cell(w[6], 8, f"${r['Total']:,.2f}", 1, 0, 'R'); pdf.ln()
+                    pdf.cell(w[0], 7, r["Origen"][:20], border=1)
+                    pdf.cell(w[1], 7, r["Destino"][:20], border=1)
+                    pdf.cell(w[2], 7, str(r["KMS"]), border=1, align='C')
+                    pdf.cell(w[3], 7, f"${r['Flete']:,.2f}", border=1, align='R')
+                    pdf.cell(w[4], 7, f"${r['Casetas']:,.2f}", border=1, align='R')
+                    pdf.cell(w[5], 7, f"${r['FSC']:,.2f}", border=1, align='R')
+                    pdf.cell(w[6], 7, f"${r['Total']:,.2f}", border=1, align='R')
+                    pdf.ln()
                 
-                if t_acc > 0:
-                    pdf.cell(sum(w[:-1]), 8, f"Accesorios ({', '.join(acc_sel)}):", 1, 0, 'R')
-                    pdf.cell(w[-1], 8, f"${t_acc:,.2f}", 1, 0, 'R'); pdf.ln()
-
-                pdf.ln(5); pdf.set_font("Arial", "B", 11)
-                pdf.cell(0, 10, f"TOTAL: ${total_final:,.2f} MXN", ln=True, align='R')
+                pdf.ln(5)
+                pdf.set_font("Arial", "B", 10)
+                pdf.cell(0, 10, f"TOTAL COTIZADO: ${gran_total:,.2f} MXN", ln=True, align='R')
                 
-                # Cláusulas (SIN CARACTERES ESPECIALES)
-                pdf.ln(5); pdf.set_font("Arial", "B", 9); pdf.cell(0, 5, "CLAUSULAS:", ln=True)
+                # Cláusulas (Sin caracteres especiales que rompan el PDF)
+                pdf.ln(5)
+                pdf.set_font("Arial", "B", 9)
+                pdf.cell(0, 5, "CONDICIONES COMERCIALES:", ln=True)
                 pdf.set_font("Arial", "", 8)
-                c_list = ["- No materiales peligrosos. Caja Regular.", "- FSC se actualiza segun mercado.", 
-                          "- Cliente responsable de remolques.", "- 3h carga / 3h descarga gratis.", 
-                          "- Hora extra: $435.00. Mov. Falso: $2,610.00.", "- Terminos: 15 dias de credito."]
-                for cl in c_list: pdf.cell(0, 4, cl, ln=True)
+                clausulas = [
+                    "- Propuesta vigente por 30 dias.",
+                    "- Rendimiento base de combustible: 2.7 km/L.",
+                    "- El FSC se actualiza segun el precio del diesel del mercado.",
+                    "- No se transportan materiales peligrosos.",
+                    "- El cliente es responsable por el cuidado de los remolques.",
+                    "- Maniobras: Maximo 3 horas carga / 3 horas descarga.",
+                    "- Hora adicional de maniobra: $435.00 MXN.",
+                    "- Demoras en planta a partir del 4to dia: $1,045.00 MXN.",
+                    "- Terminos de pago: 15 dias de credito."
+                ]
+                for c in clausulas:
+                    pdf.cell(0, 4, c, ln=True)
                 
-                pdf.ln(10); pdf.set_font("Arial", "B", 10)
-                pdf.cell(95, 5, "Gilberto Ochoa", 0, 0, 'C'); pdf.cell(95, 5, atencion_cliente, 0, 1, 'C')
-                pdf.cell(95, 5, "RL Transportaciones", 0, 0, 'C'); pdf.cell(95, 5, "Acepto Tarifas", 0, 1, 'C')
+                # Firmas
+                pdf.ln(10)
+                pdf.cell(90, 5, "_______________________", 0, 0, 'C')
+                pdf.cell(90, 5, "_______________________", 0, 1, 'C')
+                pdf.cell(90, 5, "RL Transportaciones", 0, 0, 'C')
+                pdf.cell(90, 5, f"Acepto: {atencion_cliente}", 0, 1, 'C')
+                
+                pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                st.download_button("📄 Descargar PDF Formal", pdf_bytes, "Cotizacion.pdf", "application/pdf", use_container_width=True)
 
-                pdf_data = pdf.output(dest='S').encode('latin-1')
-                st.download_button("📄 Bajar PDF", pdf_data, f"Cot_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
-
-        with c2:
-            msg = f"*COTIZACIÓN RL*\n*Cliente:* {empresa_cliente}\n"
+        with c_wa:
+            wa_msg = f"*RL TRANSPORTACIONES - COTIZACIÓN*\n\n"
+            wa_msg += f"*Cliente:* {empresa_cliente}\n*Atención:* {atencion_cliente}\n\n"
             for r in st.session_state.cotizacion_actual:
-                msg += f"• {r['Origen']} -> {r['Destino']}: ${r['Total']:,.2f}\n"
-            msg += f"\n*TOTAL:* ${total_final:,.2f} MXN"
-            st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(msg)}" target="_blank"><button style="width:100%; height:40px; background-color:#25D366; color:white; border:none; border-radius:5px; cursor:pointer;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
+                wa_msg += f"📍 {r['Origen']} -> {r['Destino']}\n"
+                wa_msg += f"   Total: ${r['Total']:,.2f}\n"
+            wa_msg += f"\n*GRAN TOTAL:* ${gran_total:,.2f} MXN\n"
+            wa_msg += f"\n_Acepto Tarifas y Condiciones_"
+            
+            url_wa = f"https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_msg)}"
+            st.markdown(f'<a href="{url_wa}" target="_blank"><button style="width:100%; height:40px; background-color:#25D366; color:white; border:none; border-radius:5px; cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
     else:
-        st.info("Añada una ruta para comenzar.")
+        st.info("Agrega rutas en la pestaña anterior para generar el documento.")
 
-with tab_hist:
-    if st.session_state.historial:
-        st.dataframe(pd.DataFrame(st.session_state.historial))
-    else: st.info("Historial vacío.")
