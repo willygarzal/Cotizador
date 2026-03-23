@@ -37,9 +37,8 @@ precios_accesorios = {
 # --- 3. BARRA LATERAL (CONTROLES MAESTROS) ---
 with st.sidebar:
     st.header("👤 Datos del Cliente")
-    # AJUSTE: Campos en blanco por defecto con placeholder
-    empresa_cliente = st.text_input("Para: (Empresa)", value="", placeholder="Nombre de la empresa")
-    atencion_cliente = st.text_input("Atención: (Contacto)", value="", placeholder="Nombre del contacto")
+    empresa_cliente = st.text_input("Para: (Empresa)", "Comercializadora México Americana")
+    atencion_cliente = st.text_input("Atención: (Contacto)", "Iker Aldape Uribares")
     tc = st.number_input("Tipo de Cambio", value=17.50, step=0.1)
     
     st.markdown("---")
@@ -59,7 +58,7 @@ with st.sidebar:
     cpk_base = st.number_input("CPK Base (MXN) $", value=25.0)
     ipk_objetivo = st.number_input("IPK Objetivo (MXN) $", value=cpk_base / 0.75)
     
-    telefono_wa = st.text_input("WhatsApp para envío", value="521")
+    telefono_wa = st.text_input("WhatsApp para envío", "521")
 
 # --- 4. ÁREA DE TRABAJO ---
 tab_cot, tab_resumen = st.tabs(["📍 Configurar Rutas", "📄 Generar Cotización Final"])
@@ -70,9 +69,8 @@ with tab_cot:
     with col_mapa:
         st.subheader("🗺️ Definir Trayecto")
         c1, c2 = st.columns(2)
-        # AJUSTE: Rutas en blanco por defecto
-        orig = c1.text_input("Origen", value="", placeholder="Ej: Nuevo Laredo, Tamps.")
-        dest = c2.text_input("Destino", value="", placeholder="Ej: Silao, Gto.")
+        orig = c1.text_input("Origen", "Nuevo Laredo, Tamps.")
+        dest = c2.text_input("Destino", "Silao, Gto.")
         
         km_auto = 0.0
         casetas_auto = 0.0
@@ -89,7 +87,7 @@ with tab_cot:
                 resp = requests.post(routes_url, json=payload, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
-                    if "routes" in data and len(data["routes"]) > 0:
+                    if "routes" in data:
                         ruta = data["routes"][0]
                         km_auto = round(ruta.get("distanceMeters", 0) / 1000.0, 1)
                         if "travelAdvisory" in ruta and "tollInfo" in ruta["travelAdvisory"]:
@@ -118,21 +116,18 @@ with tab_cot:
         st.metric("Subtotal Ruta", f"${total_ruta:,.2f}")
 
         if st.button("➕ Agregar Ruta a la Propuesta", use_container_width=True, type="primary"):
-            if not orig or not dest:
-                st.error("⚠️ Ingrese Origen y Destino antes de agregar.")
-            else:
-                nueva_fila = {
-                    "Origen": orig, "Destino": dest, "Servicio": tipo_op,
-                    "KMS": km_final, "Flete": flete_final, "Casetas": casetas_final,
-                    "FSC": fsc_final, "Total": total_ruta
-                }
-                st.session_state.cotizacion_actual.append(nueva_fila)
-                st.toast("Ruta agregada correctamente")
+            nueva_fila = {
+                "Origen": orig, "Destino": dest, "Servicio": tipo_op,
+                "KMS": km_final, "Flete": flete_final, "Casetas": casetas_final,
+                "FSC": fsc_final, "Total": total_ruta
+            }
+            st.session_state.cotizacion_actual.append(nueva_fila)
+            st.toast("Ruta agregada correctamente")
 
 with tab_resumen:
     if st.session_state.cotizacion_actual:
         df_view = pd.DataFrame(st.session_state.cotizacion_actual)
-        st.table(df_view.style.format({"Flete": "${:,.2f}", "Casetas": "${:,.2f}", "FSC": "${:,.2f}", "Total": "${:,.2f}"}))
+        st.table(df_view)
         
         gran_total = df_view["Total"].sum()
         st.subheader(f"Total Global de Cotización: ${gran_total:,.2f} MXN")
@@ -146,75 +141,72 @@ with tab_resumen:
         c_pdf, c_wa = st.columns(2)
         
         with c_pdf:
-            if not empresa_cliente or not atencion_cliente:
-                st.warning("⚠️ Capture los datos del cliente para habilitar el PDF.")
-            else:
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", "B", 16)
-                pdf.cell(0, 10, "RL TRANSPORTACIONES", ln=True)
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 10, f"COTIZACIÓN - {datetime.now().strftime('%d/%m/%Y')}", ln=True, align='R')
-                pdf.ln(5)
-                
-                pdf.set_font("Arial", "", 10)
-                pdf.cell(0, 5, f"Para: {empresa_cliente}", ln=True)
-                pdf.cell(0, 5, f"Atención: {atencion_cliente}", ln=True)
-                pdf.ln(5)
-                
-                # Encabezados de Tabla
-                pdf.set_font("Arial", "B", 8)
-                pdf.set_fill_color(230)
-                headers = ["Origen", "Destino", "KMS", "Flete", "Casetas", "FSC", "Total"]
-                w = [35, 35, 15, 25, 25, 25, 30]
-                for i in range(len(headers)):
-                    pdf.cell(w[i], 7, headers[i], border=1, fill=True, align='C')
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", "B", 16)
+            pdf.cell(0, 10, "RL TRANSPORTACIONES", ln=True)
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, f"COTIZACIÓN - {datetime.now().strftime('%d/%m/%Y')}", ln=True, align='R')
+            pdf.ln(5)
+            
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(0, 5, f"Para: {empresa_cliente}", ln=True)
+            pdf.cell(0, 5, f"Atención: {atencion_cliente}", ln=True)
+            pdf.ln(5)
+            
+            # Encabezados de Tabla
+            pdf.set_font("Arial", "B", 8)
+            pdf.set_fill_color(230)
+            headers = ["Origen", "Destino", "KMS", "Flete", "Casetas", "FSC", "Total"]
+            w = [35, 35, 15, 25, 25, 25, 30]
+            for i in range(len(headers)):
+                pdf.cell(w[i], 7, headers[i], border=1, fill=True, align='C')
+            pdf.ln()
+            
+            # Filas del Carrito
+            pdf.set_font("Arial", "", 8)
+            for r in st.session_state.cotizacion_actual:
+                pdf.cell(w[0], 7, r["Origen"][:20], border=1)
+                pdf.cell(w[1], 7, r["Destino"][:20], border=1)
+                pdf.cell(w[2], 7, str(r["KMS"]), border=1, align='C')
+                pdf.cell(w[3], 7, f"${r['Flete']:,.2f}", border=1, align='R')
+                pdf.cell(w[4], 7, f"${r['Casetas']:,.2f}", border=1, align='R')
+                pdf.cell(w[5], 7, f"${r['FSC']:,.2f}", border=1, align='R')
+                pdf.cell(w[6], 7, f"${r['Total']:,.2f}", border=1, align='R')
                 pdf.ln()
-                
-                # Filas del Carrito
-                pdf.set_font("Arial", "", 8)
-                for r in st.session_state.cotizacion_actual:
-                    pdf.cell(w[0], 7, r["Origen"][:20], border=1)
-                    pdf.cell(w[1], 7, r["Destino"][:20], border=1)
-                    pdf.cell(w[2], 7, str(r["KMS"]), border=1, align='C')
-                    pdf.cell(w[3], 7, f"${r['Flete']:,.2f}", border=1, align='R')
-                    pdf.cell(w[4], 7, f"${r['Casetas']:,.2f}", border=1, align='R')
-                    pdf.cell(w[5], 7, f"${r['FSC']:,.2f}", border=1, align='R')
-                    pdf.cell(w[6], 7, f"${r['Total']:,.2f}", border=1, align='R')
-                    pdf.ln()
-                
-                pdf.ln(5)
-                pdf.set_font("Arial", "B", 10)
-                pdf.cell(0, 10, f"TOTAL COTIZADO: ${gran_total:,.2f} MXN", ln=True, align='R')
-                
-                # Cláusulas (Sin caracteres especiales que rompan el PDF)
-                pdf.ln(5)
-                pdf.set_font("Arial", "B", 9)
-                pdf.cell(0, 5, "CONDICIONES COMERCIALES:", ln=True)
-                pdf.set_font("Arial", "", 8)
-                clausulas = [
-                    "- Propuesta vigente por 30 dias.",
-                    "- Rendimiento base de combustible: 2.7 km/L.",
-                    "- El FSC se actualiza segun el precio del diesel del mercado.",
-                    "- No se transportan materiales peligrosos.",
-                    "- El cliente es responsable por el cuidado de los remolques.",
-                    "- Maniobras: Maximo 3 horas carga / 3 horas descarga.",
-                    "- Hora adicional de maniobra: $435.00 MXN.",
-                    "- Demoras en planta a partir del 4to dia: $1,045.00 MXN.",
-                    "- Terminos de pago: 15 dias de credito."
-                ]
-                for c in clausulas:
-                    pdf.cell(0, 4, c, ln=True)
-                
-                # Firmas
-                pdf.ln(10)
-                pdf.cell(90, 5, "_______________________", 0, 0, 'C')
-                pdf.cell(90, 5, "_______________________", 0, 1, 'C')
-                pdf.cell(90, 5, "RL Transportaciones", 0, 0, 'C')
-                pdf.cell(90, 5, f"Acepto: {atencion_cliente}", 0, 1, 'C')
-                
-                pdf_bytes = pdf.output(dest='S').encode('latin-1')
-                st.download_button("📄 Descargar PDF Formal", pdf_bytes, f"Cotizacion_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
+            
+            pdf.ln(5)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(0, 10, f"TOTAL COTIZADO: ${gran_total:,.2f} MXN", ln=True, align='R')
+            
+            # Cláusulas (Sin caracteres especiales que rompan el PDF)
+            pdf.ln(5)
+            pdf.set_font("Arial", "B", 9)
+            pdf.cell(0, 5, "CONDICIONES COMERCIALES:", ln=True)
+            pdf.set_font("Arial", "", 8)
+            clausulas = [
+                "- Propuesta vigente por 30 dias.",
+                "- Rendimiento base de combustible: 2.7 km/L.",
+                "- El FSC se actualiza segun el precio del diesel del mercado.",
+                "- No se transportan materiales peligrosos.",
+                "- El cliente es responsable por el cuidado de los remolques.",
+                "- Maniobras: Maximo 3 horas carga / 3 horas descarga.",
+                "- Hora adicional de maniobra: $435.00 MXN.",
+                "- Demoras en planta a partir del 4to dia: $1,045.00 MXN.",
+                "- Terminos de pago: 15 dias de credito."
+            ]
+            for c in clausulas:
+                pdf.cell(0, 4, c, ln=True)
+            
+            # Firmas
+            pdf.ln(10)
+            pdf.cell(90, 5, "_______________________", 0, 0, 'C')
+            pdf.cell(90, 5, "_______________________", 0, 1, 'C')
+            pdf.cell(90, 5, "RL Transportaciones", 0, 0, 'C')
+            pdf.cell(90, 5, f"Acepto: {atencion_cliente}", 0, 1, 'C')
+            
+            pdf_bytes = pdf.output(dest='S').encode('latin-1')
+            st.download_button("📄 Descargar PDF Formal", pdf_bytes, "Cotizacion.pdf", "application/pdf", use_container_width=True)
 
         with c_wa:
             wa_msg = f"*RL TRANSPORTACIONES - COTIZACIÓN*\n\n"
