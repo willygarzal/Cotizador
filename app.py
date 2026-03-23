@@ -37,9 +37,9 @@ precios_accesorios = {
 # --- 3. BARRA LATERAL (CONTROLES MAESTROS) ---
 with st.sidebar:
     st.header("👤 Datos del Cliente")
-    # CAMBIO: Se eliminan los nombres predeterminados para obligar a captura nueva
+    # AJUSTE: Campos en blanco por defecto con placeholder
     empresa_cliente = st.text_input("Para: (Empresa)", value="", placeholder="Nombre de la empresa")
-    atencion_cliente = st.text_input("Atención: (Contacto)", value="", placeholder="Persona de contacto")
+    atencion_cliente = st.text_input("Atención: (Contacto)", value="", placeholder="Nombre del contacto")
     tc = st.number_input("Tipo de Cambio", value=17.50, step=0.1)
     
     st.markdown("---")
@@ -59,7 +59,7 @@ with st.sidebar:
     cpk_base = st.number_input("CPK Base (MXN) $", value=25.0)
     ipk_objetivo = st.number_input("IPK Objetivo (MXN) $", value=cpk_base / 0.75)
     
-    telefono_wa = st.text_input("WhatsApp para envío", value="521", placeholder="521XXXXXXXXXX")
+    telefono_wa = st.text_input("WhatsApp para envío", value="521")
 
 # --- 4. ÁREA DE TRABAJO ---
 tab_cot, tab_resumen = st.tabs(["📍 Configurar Rutas", "📄 Generar Cotización Final"])
@@ -70,7 +70,7 @@ with tab_cot:
     with col_mapa:
         st.subheader("🗺️ Definir Trayecto")
         c1, c2 = st.columns(2)
-        # CAMBIO: Se eliminan las rutas predeterminadas
+        # AJUSTE: Rutas en blanco por defecto
         orig = c1.text_input("Origen", value="", placeholder="Ej: Nuevo Laredo, Tamps.")
         dest = c2.text_input("Destino", value="", placeholder="Ej: Silao, Gto.")
         
@@ -119,7 +119,7 @@ with tab_cot:
 
         if st.button("➕ Agregar Ruta a la Propuesta", use_container_width=True, type="primary"):
             if not orig or not dest:
-                st.error("⚠️ Debes ingresar un Origen y Destino válido antes de agregar.")
+                st.error("⚠️ Ingrese Origen y Destino antes de agregar.")
             else:
                 nueva_fila = {
                     "Origen": orig, "Destino": dest, "Servicio": tipo_op,
@@ -132,7 +132,7 @@ with tab_cot:
 with tab_resumen:
     if st.session_state.cotizacion_actual:
         df_view = pd.DataFrame(st.session_state.cotizacion_actual)
-        st.table(df_view)
+        st.table(df_view.style.format({"Flete": "${:,.2f}", "Casetas": "${:,.2f}", "FSC": "${:,.2f}", "Total": "${:,.2f}"}))
         
         gran_total = df_view["Total"].sum()
         st.subheader(f"Total Global de Cotización: ${gran_total:,.2f} MXN")
@@ -146,9 +146,8 @@ with tab_resumen:
         c_pdf, c_wa = st.columns(2)
         
         with c_pdf:
-            # Validación para asegurar que el usuario llenó los datos del cliente
             if not empresa_cliente or not atencion_cliente:
-                st.warning("⚠️ Completa 'Para' y 'Atención' en la barra lateral para habilitar el PDF.")
+                st.warning("⚠️ Capture los datos del cliente para habilitar el PDF.")
             else:
                 pdf = FPDF()
                 pdf.add_page()
@@ -215,7 +214,7 @@ with tab_resumen:
                 pdf.cell(90, 5, f"Acepto: {atencion_cliente}", 0, 1, 'C')
                 
                 pdf_bytes = pdf.output(dest='S').encode('latin-1')
-                st.download_button("📄 Descargar PDF Formal", pdf_bytes, "Cotizacion.pdf", "application/pdf", use_container_width=True)
+                st.download_button("📄 Descargar PDF Formal", pdf_bytes, f"Cotizacion_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
 
         with c_wa:
             wa_msg = f"*RL TRANSPORTACIONES - COTIZACIÓN*\n\n"
@@ -230,4 +229,3 @@ with tab_resumen:
             st.markdown(f'<a href="{url_wa}" target="_blank"><button style="width:100%; height:40px; background-color:#25D366; color:white; border:none; border-radius:5px; cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
     else:
         st.info("Agrega rutas en la pestaña anterior para generar el documento.")
-
