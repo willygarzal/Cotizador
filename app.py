@@ -53,11 +53,11 @@ with st.sidebar:
     st.header("👤 Datos de Cotización")
     empresa_remitente = st.text_input("Nuestra Empresa", "RL TRANSPORTACIONES")
     nombre_remitente = st.text_input("Nuestro Representante", "Willy")
-    lugar_expedicion = st.text_input("Lugar de Expedición", "Pesquería N. L.")
+    lugar_expedicion = st.text_input("Lugar de Expedición", "")
     
     st.markdown("---")
-    empresa_cliente = st.text_input("Para: (Empresa)", "Comercializadora México Americana")
-    atencion_cliente = st.text_input("Atención: (Contacto)", "Iker Aldape Uribares")
+    empresa_cliente = st.text_input("Para: (Empresa)", "")
+    atencion_cliente = st.text_input("Atención: (Contacto)", "")
     tipo_op = st.selectbox("Servicio", ["Importación", "Exportación", "Nacional"])
     tc = st.number_input("Tipo de Cambio (MXN/USD)", value=17.50, step=0.1)
     
@@ -83,7 +83,8 @@ with st.sidebar:
         
     ruta_sel = st.selectbox("Ruta de Tabla:", opciones)
     
-    cpk_init, km_init, orig_sug, dest_sug = 25.0, 1.0, "Nuevo Laredo, Tamps.", "Silao, Gto."
+    # Valores en blanco por defecto para rutas manuales
+    cpk_init, km_init, orig_sug, dest_sug = 0.0, 0.0, "", ""
 
     if ruta_sel != texto_manual and not rutas_filtro.empty:
         d_r = rutas_filtro[(rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"]) == ruta_sel].iloc[0]
@@ -100,17 +101,17 @@ with st.sidebar:
     cpk_total_mxn = cpk_base + cpac + e1 + e2
 
     if moneda_neg == "MXN (Pesos)":
-        ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (MXN) $", value=cpk_total_mxn / 0.75)
+        ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (MXN) $", value=cpk_total_mxn / 0.75 if cpk_total_mxn > 0 else 0.0)
         ipk_mxn_final = ipk_pactado
         moneda_tag = "MXN"
     else:
-        ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (USD) $", value=(cpk_total_mxn / 0.75) / tc)
+        ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (USD) $", value=(cpk_total_mxn / 0.75) / tc if cpk_total_mxn > 0 else 0.0)
         ipk_mxn_final = ipk_pactado * tc
         moneda_tag = "USD"
 
     margen_real = (1 - (cpk_total_mxn / ipk_mxn_final)) * 100 if ipk_mxn_final > 0 else 0
     
-    telefono_wa = st.text_input("WhatsApp Cliente", "521")
+    telefono_wa = st.text_input("WhatsApp Cliente", "")
 
 # --- 4. ÁREA DE COTIZACIÓN (INTERFAZ MEJORADA) ---
 tab_cot, tab_hist = st.tabs(["🎯 Cotizador Pro", "📜 Historial Completo"])
@@ -184,11 +185,11 @@ with tab_cot:
             col_f1, col_f2 = st.columns(2)
             
             casetas = col_f1.number_input("Casetas Grales. API ($)", value=float(costo_peaje_pesado))
-            factor_cepac = col_f2.number_input("Factor CEPAC ($/km)", 0.0, format="%.2f")
+            factor_cpac = col_f2.number_input("Factor CPAC ($/km)", 0.0, format="%.2f")
             
-            total_cepac = km_final * factor_cepac
-            if total_cepac > 0:
-                st.caption(f"Total CEPAC ({km_final} km x ${factor_cepac}): **${total_cepac:,.2f}**")
+            total_cpac = km_final * factor_cpac
+            if total_cpac > 0:
+                st.caption(f"Total CPAC ({km_final} km x ${factor_cpac}): **${total_cpac:,.2f}**")
             
             st.markdown("---")
             st.markdown("**Listado de Accesorios Adicionales**")
@@ -214,7 +215,7 @@ with tab_cot:
                     detalle_accesorios[acc] = {"cantidad": cant, "costo": costo, "subtotal": subtotal}
                     st.caption(f"Subtotal {acc}: **${subtotal:,.2f}**")
 
-            total_extras_mxn = casetas + total_cepac + total_accesorios_mxn
+            total_extras_mxn = casetas + total_cpac + total_accesorios_mxn
 
         flete_neto_mxn = km_final * ipk_mxn_final
         # Sumamos el FSC al total a facturar
@@ -225,8 +226,8 @@ with tab_cot:
             st.write(f"Flete: **${flete_neto_mxn:,.2f}**")
             st.write(f"(+) FSC: **${total_fsc_mxn:,.2f}**")
             st.write(f"(+) Casetas: **${casetas:,.2f}**")
-            if total_cepac > 0:
-                st.write(f"(+) Total CEPAC: **${total_cepac:,.2f}**")
+            if total_cpac > 0:
+                st.write(f"(+) Total CPAC: **${total_cpac:,.2f}**")
             for acc, datos in detalle_accesorios.items():
                 st.write(f"(+) {acc}: **${datos['subtotal']:,.2f}**")
             st.write(f"**Total Cargos: ${(total_extras_mxn + total_fsc_mxn):,.2f}**")
@@ -285,8 +286,8 @@ with tab_cot:
                 "CPK Base": round(cpk_base, 2),
                 "FSC": round(total_fsc_mxn, 2),
                 "Casetas": round(casetas, 2),
-                "Factor CEPAC": round(factor_cepac, 2),
-                "Total CEPAC": round(total_cepac, 2),
+                "Factor CPAC": round(factor_cpac, 2),
+                "Total CPAC": round(total_cpac, 2),
                 "Accesorios Incluidos": nombres_accesorios,
                 "Total Accesorios": round(total_accesorios_mxn, 2),
                 "TC": tc,
@@ -351,12 +352,12 @@ with tab_cot:
         pdf.cell(w_tot, 8, f"${total_mxn_neto:,.2f}", border=1, align='C')
         pdf.ln(8)
         
-        if total_cepac > 0 or detalle_accesorios:
+        if total_cpac > 0 or detalle_accesorios:
             pdf.set_font("Arial", "B", 8)
             pdf.cell(0, 5, "Cargos Adicionales Cotizados:", ln=True)
             pdf.set_font("Arial", "", 8)
-            if total_cepac > 0:
-                pdf.cell(0, 5, f"  - CEPAC Operativo: ${total_cepac:,.2f}", ln=True)
+            if total_cpac > 0:
+                pdf.cell(0, 5, f"  - CPAC Operativo: ${total_cpac:,.2f}", ln=True)
             for acc, datos in detalle_accesorios.items():
                 pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${datos['subtotal']:,.2f}", ln=True)
             pdf.ln(2)
