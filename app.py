@@ -37,14 +37,14 @@ precios_accesorios = {
     "MOVIMIENTO EN FALSO": 2610.00
 }
 
-# --- 2. BASE DE DATOS DE REFERENCIA ---
+# --- 2. BASE DE DATOS DE REFERENCIA (CPK SECO) ---
 datos_ref = [
-    ["EXPO", "MTY-AREA METRO", "NUEVO LAREDO", 230, 26.00, 34.67],
-    ["EXPO", "SALTILLO - RAMOS", "NUEVO LAREDO", 310, 24.00, 32.00],
-    ["EXPO", "DERRAMADERO", "NUEVO LAREDO", 380, 25.00, 33.33],
-    ["IMPO", "NUEVO LAREDO", "MTY-AREA METRO", 230, 31.10, 41.46],
-    ["IMPO", "NUEVO LAREDO", "SALTILLO - RAMOS", 310, 28.00, 37.33],
-    ["IMPO", "NUEVO LAREDO", "DERRAMADERO", 380, 28.10, 37.47]
+    ["EXPO", "MTY-AREA METRO", "NUEVO LAREDO", 230, 13.76, 34.67],
+    ["EXPO", "SALTILLO - RAMOS", "NUEVO LAREDO", 310, 12.58, 32.00],
+    ["EXPO", "DERRAMADERO", "NUEVO LAREDO", 380, 14.01, 33.33],
+    ["IMPO", "NUEVO LAREDO", "MTY-AREA METRO", 230, 18.86, 41.46],
+    ["IMPO", "NUEVO LAREDO", "SALTILLO - RAMOS", 310, 16.58, 37.33],
+    ["IMPO", "NUEVO LAREDO", "DERRAMADERO", 380, 17.11, 37.47]
 ]
 df_ref = pd.DataFrame(datos_ref, columns=["Tipo", "Origen", "Destino", "KM_Ref", "CPK_Base", "IPK_Ref"])
 
@@ -52,7 +52,7 @@ df_ref = pd.DataFrame(datos_ref, columns=["Tipo", "Origen", "Destino", "KM_Ref",
 with st.sidebar:
     st.header("👤 Datos de Cotización")
     empresa_remitente = st.text_input("Nuestra Empresa", "RL TRANSPORTACIONES")
-    nombre_remitente = st.text_input("Nuestro Representante", "Gilberto Ochoa Sepúlveda")
+    nombre_remitente = st.text_input("Nuestro Representante", "Willy")
     lugar_expedicion = st.text_input("Lugar de Expedición", "Pesquería N. L.")
     
     st.markdown("---")
@@ -64,7 +64,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("⛽ Combustible (FSC)")
     precio_diesel = st.number_input("Precio Diésel ($/L)", value=24.50, step=0.50)
-    rendimiento = st.number_input("Rendimiento (km/L)", value=2.2, step=0.1)
+    rendimiento = st.number_input("Rendimiento (km/L)", value=2.7, step=0.1)
     
     st.markdown("---")
     st.header("⚙️ Negociación y Ajustes")
