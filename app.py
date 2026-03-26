@@ -40,7 +40,6 @@ precios_accesorios = {
 # --- 2. BARRA LATERAL (LÓGICA DE NEGOCIACIÓN) ---
 with st.sidebar:
     st.header("👤 Datos de Cotización")
-    # Campos limpios desde cero
     empresa_remitente = st.text_input("Nuestra Empresa", "")
     nombre_remitente = st.text_input("Nuestro Representante", "")
     lugar_expedicion = st.text_input("Lugar de Expedición", "")
@@ -50,7 +49,6 @@ with st.sidebar:
     atencion_cliente = st.text_input("Atención: (Contacto)", "")
     tipo_op = st.selectbox("Servicio", ["Importación", "Exportación", "Nacional"])
     
-    # NUEVO: Selector de Tipo de Equipo
     tipo_equipo = st.radio("Tipo de Equipo", ["Caja de Intercambio (Tercero)", "Caja Propia"])
     
     tc = st.number_input("Tipo de Cambio (MXN/USD)", value=17.50, step=0.1)
@@ -80,14 +78,12 @@ with tab_cot:
     with col_ruta:
         st.subheader("📍 Ruta y Extracción de Peajes")
         c1, c2 = st.columns(2)
-        # Campos de ruta limpios desde cero
         orig = c1.text_input("Origen", "")
         dest = c2.text_input("Destino", "")
         
         distancia_real_km = 0.0
         costo_peaje_pesado = 0.0
         
-        # --- CONEXIÓN A GOOGLE ROUTES API ---
         if orig and dest:
             try:
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
@@ -131,7 +127,6 @@ with tab_cot:
 
         km_final = st.number_input("KMS", value=float(distancia_real_km), key="km_input_main") 
 
-        # --- LÓGICA DE CPK AUTOMÁTICO ---
         cpk_base = 0.0
         if tipo_op in ["Importación", "Exportación"]:
             if km_final > 0:
@@ -154,7 +149,6 @@ with tab_cot:
         if tipo_op in ["Importación", "Exportación"] and km_final > 0:
             st.success(f"⚙️ **CPK Automático Aplicado:** ${cpk_base:.2f} MXN ({tipo_equipo})")
 
-        # --- CÁLCULO DE IPK MOVIDO A LA PANTALLA PRINCIPAL ---
         st.markdown("---")
         c_cpk, c_ipk = st.columns(2)
         with c_cpk:
@@ -162,17 +156,19 @@ with tab_cot:
             
         with c_ipk:
             if moneda_neg == "MXN (Pesos)":
-                ipk_pactado = st.number_input("IPK Objetivo (MXN) $", value=cpk_base / 0.75 if cpk_base > 0 else 0.0)
+                # AJUSTE: Cálculo sugerido con 1.25
+                ipk_pactado = st.number_input("IPK Objetivo (MXN) $", value=cpk_base * 1.25 if cpk_base > 0 else 0.0)
                 ipk_mxn_final = ipk_pactado
                 moneda_tag = "MXN"
             else:
-                ipk_pactado = st.number_input("IPK Objetivo (USD) $", value=(cpk_base / 0.75) / tc if cpk_base > 0 else 0.0)
+                # AJUSTE: Cálculo sugerido con 1.25 convertido a USD
+                ipk_pactado = st.number_input("IPK Objetivo (USD) $", value=(cpk_base * 1.25) / tc if cpk_base > 0 else 0.0)
                 ipk_mxn_final = ipk_pactado * tc
                 moneda_tag = "USD"
 
-        margen_real = (1 - (cpk_base / ipk_mxn_final)) * 100 if ipk_mxn_final > 0 else 0
+        # AJUSTE: Fórmula de margen actualizada a Markup sobre Costo
+        margen_real = ((ipk_mxn_final - cpk_base) / cpk_base) * 100 if cpk_base > 0 else 0.0
 
-        # --- CÁLCULO DINÁMICO DEL FSC ---
         st.markdown("---")
         total_fsc_mxn = (km_final / rendimiento) * precio_diesel if rendimiento > 0 else 0
         st.info(f"⛽ **FSC Proyectado:** {km_final} km ÷ {rendimiento} km/L x ${precio_diesel:,.2f} = **${total_fsc_mxn:,.2f} MXN**")
@@ -230,7 +226,6 @@ with tab_cot:
                 st.write(f"(+) {acc}: **${datos['subtotal']:,.2f}**")
             st.write(f"**Total Cargos: ${(total_extras_mxn + total_fsc_mxn):,.2f}**")
 
-    # --- FILA 2: METRICAS GRANDES (KPIs) ---
     st.markdown("---")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
@@ -253,13 +248,12 @@ with tab_cot:
             st.warning(f"⚠️ Margen por debajo del objetivo (25%)")
         
         st.metric(
-            label="Margen Real (Flete Puro)", 
+            label="Margen sobre Costo (Markup)", 
             value=f"{margen_real:.1f}%", 
             delta=f"{margen_real - 25:.1f}% vs Obj (25%)",
             delta_color=color_delta
         )
 
-    # --- FILA 3: ACCIONES ---
     st.markdown("---")
     st.subheader("🚀 Acciones")
     a1, a2, a3 = st.columns(3)
@@ -272,7 +266,6 @@ with tab_cot:
         if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
             nombres_accesorios = ", ".join(detalle_accesorios.keys()) if detalle_accesorios else "Ninguno"
             
-            # NUEVA SÁBANA DE HISTORIAL COMPLETO
             st.session_state.historial.insert(0, {
                 "Fecha": datetime.now().strftime("%d/%m %H:%M"),
                 "Empresa": empresa_cliente,
@@ -292,7 +285,7 @@ with tab_cot:
                 "Accesorios Incluidos": nombres_accesorios,
                 "Total MXN": round(total_mxn_neto, 2),
                 "Total USD": round(total_usd_neto, 2),
-                "Margen Flete %": round(margen_real, 1)
+                "Margen Markup %": round(margen_real, 1)
             })
             st.toast(f"✅ Guardado en Historial Completo")
 
