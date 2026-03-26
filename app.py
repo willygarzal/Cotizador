@@ -127,22 +127,28 @@ with tab_cot:
 
         km_final = st.number_input("KMS", value=float(distancia_real_km), key="km_input_main") 
 
+        # --- LÓGICA DE CPK AUTOMÁTICO ACTUALIZADA ---
         cpk_base = 0.0
         if tipo_op in ["Importación", "Exportación"]:
             if km_final > 0:
                 if km_final <= 199:
-                    cpk_base = 19.10
+                    cpk_base = 16.80
                 elif km_final <= 249:
-                    cpk_base = 19.00
+                    cpk_base = 16.13
                 elif km_final <= 349:
-                    cpk_base = 18.22
-                elif km_final <= 499:
-                    cpk_base = 18.42
+                    cpk_base = 15.40
+                elif km_final <= 400:
+                    cpk_base = 15.50
+                elif km_final <= 799:
+                    cpk_base = 14.50
+                elif km_final <= 1099:
+                    cpk_base = 13.50
                 else:
-                    cpk_base = 17.30
+                    cpk_base = 12.56
                 
+                # AJUSTE: El extra por caja propia ahora es $1.50
                 if tipo_equipo == "Caja Propia":
-                    cpk_base += 1.65
+                    cpk_base += 1.50
         else:
             cpk_base = st.number_input("CPK Base Manual (Nacional) $", value=0.0)
 
@@ -156,17 +162,14 @@ with tab_cot:
             
         with c_ipk:
             if moneda_neg == "MXN (Pesos)":
-                # AJUSTE: Cálculo sugerido con 1.25
                 ipk_pactado = st.number_input("IPK Objetivo (MXN) $", value=cpk_base * 1.25 if cpk_base > 0 else 0.0)
                 ipk_mxn_final = ipk_pactado
                 moneda_tag = "MXN"
             else:
-                # AJUSTE: Cálculo sugerido con 1.25 convertido a USD
                 ipk_pactado = st.number_input("IPK Objetivo (USD) $", value=(cpk_base * 1.25) / tc if cpk_base > 0 else 0.0)
                 ipk_mxn_final = ipk_pactado * tc
                 moneda_tag = "USD"
 
-        # AJUSTE: Fórmula de margen actualizada a Markup sobre Costo
         margen_real = ((ipk_mxn_final - cpk_base) / cpk_base) * 100 if cpk_base > 0 else 0.0
 
         st.markdown("---")
