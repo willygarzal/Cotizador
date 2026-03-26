@@ -37,28 +37,22 @@ precios_accesorios = {
     "MOVIMIENTO EN FALSO": 2610.00
 }
 
-# --- 2. BASE DE DATOS DE REFERENCIA (CPK SECO) ---
-datos_ref = [
-    ["EXPO", "MTY-AREA METRO", "NUEVO LAREDO", 230, 13.76, 34.67],
-    ["EXPO", "SALTILLO - RAMOS", "NUEVO LAREDO", 310, 12.58, 32.00],
-    ["EXPO", "DERRAMADERO", "NUEVO LAREDO", 380, 14.01, 33.33],
-    ["IMPO", "NUEVO LAREDO", "MTY-AREA METRO", 230, 18.86, 41.46],
-    ["IMPO", "NUEVO LAREDO", "SALTILLO - RAMOS", 310, 16.58, 37.33],
-    ["IMPO", "NUEVO LAREDO", "DERRAMADERO", 380, 17.11, 37.47]
-]
-df_ref = pd.DataFrame(datos_ref, columns=["Tipo", "Origen", "Destino", "KM_Ref", "CPK_Base", "IPK_Ref"])
-
-# --- 3. BARRA LATERAL (LÓGICA DE NEGOCIACIÓN) ---
+# --- 2. BARRA LATERAL (LÓGICA DE NEGOCIACIÓN) ---
 with st.sidebar:
     st.header("👤 Datos de Cotización")
-    empresa_remitente = st.text_input("Nuestra Empresa", "RL TRANSPORTACIONES")
-    nombre_remitente = st.text_input("Nuestro Representante", "Willy")
+    # Campos limpios desde cero
+    empresa_remitente = st.text_input("Nuestra Empresa", "")
+    nombre_remitente = st.text_input("Nuestro Representante", "")
     lugar_expedicion = st.text_input("Lugar de Expedición", "")
     
     st.markdown("---")
     empresa_cliente = st.text_input("Para: (Empresa)", "")
     atencion_cliente = st.text_input("Atención: (Contacto)", "")
     tipo_op = st.selectbox("Servicio", ["Importación", "Exportación", "Nacional"])
+    
+    # NUEVO: Selector de Tipo de Equipo
+    tipo_equipo = st.radio("Tipo de Equipo", ["Caja de Intercambio (Tercero)", "Caja Propia"])
+    
     tc = st.number_input("Tipo de Cambio (MXN/USD)", value=17.50, step=0.1)
     
     st.markdown("---")
@@ -73,47 +67,9 @@ with st.sidebar:
     st.caption("Ajuste de Casetas Automáticas (Auto vs Tracto)")
     mult_peaje = st.number_input("Multiplicador Carga Pesada (T3S2)", value=2.5, step=0.1)
     
-    rutas_filtro = df_ref[df_ref["Tipo"] == ("EXPO" if tipo_op == "Exportación" else "IMPO")] if tipo_op in ["Exportación", "Importación"] else df_ref
-    texto_manual = "Manual (Ruta Nueva)"
-    
-    if not rutas_filtro.empty:
-        opciones = [texto_manual] + (rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"]).tolist()
-    else:
-        opciones = [texto_manual]
-        
-    ruta_sel = st.selectbox("Ruta de Tabla:", opciones)
-    
-    # Valores en blanco por defecto para rutas manuales
-    cpk_init, km_init, orig_sug, dest_sug = 0.0, 0.0, "", ""
-
-    if ruta_sel != texto_manual and not rutas_filtro.empty:
-        d_r = rutas_filtro[(rutas_filtro["Origen"] + " -> " + rutas_filtro["Destino"]) == ruta_sel].iloc[0]
-        cpk_init, km_init = float(d_r["CPK_Base"]), float(d_r["KM_Ref"])
-        orig_sug, dest_sug = d_r["Origen"], d_r["Destino"]
-
-    cpk_base = st.number_input("CPK Base (MXN) $", value=cpk_init)
-    
-    with st.expander("🛠️ Costos Op. (CPAC/E1/E2)"):
-        cpac = st.number_input("CPAC / Otros", 0.0)
-        e1 = st.number_input("E1 (Variable)", 0.0)
-        e2 = st.number_input("E2 (Variable)", 0.0)
-    
-    cpk_total_mxn = cpk_base + cpac + e1 + e2
-
-    if moneda_neg == "MXN (Pesos)":
-        ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (MXN) $", value=cpk_total_mxn / 0.75 if cpk_total_mxn > 0 else 0.0)
-        ipk_mxn_final = ipk_pactado
-        moneda_tag = "MXN"
-    else:
-        ipk_pactado = st.number_input("IPK Objetivo Libre de Impuestos (USD) $", value=(cpk_total_mxn / 0.75) / tc if cpk_total_mxn > 0 else 0.0)
-        ipk_mxn_final = ipk_pactado * tc
-        moneda_tag = "USD"
-
-    margen_real = (1 - (cpk_total_mxn / ipk_mxn_final)) * 100 if ipk_mxn_final > 0 else 0
-    
     telefono_wa = st.text_input("WhatsApp Cliente", "")
 
-# --- 4. ÁREA DE COTIZACIÓN (INTERFAZ MEJORADA) ---
+# --- 3. ÁREA DE COTIZACIÓN ---
 tab_cot, tab_hist = st.tabs(["🎯 Cotizador Pro", "📜 Historial Completo"])
 
 with tab_cot:
@@ -124,13 +80,14 @@ with tab_cot:
     with col_ruta:
         st.subheader("📍 Ruta y Extracción de Peajes")
         c1, c2 = st.columns(2)
-        orig = c1.text_input("Origen", orig_sug)
-        dest = c2.text_input("Destino", dest_sug)
+        # Campos de ruta limpios desde cero
+        orig = c1.text_input("Origen", "")
+        dest = c2.text_input("Destino", "")
         
-        distancia_real_km = km_init
+        distancia_real_km = 0.0
         costo_peaje_pesado = 0.0
         
-        # --- CONEXIÓN A GOOGLE ROUTES API PARA CASETAS DINÁMICAS ---
+        # --- CONEXIÓN A GOOGLE ROUTES API ---
         if orig and dest:
             try:
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
@@ -174,7 +131,49 @@ with tab_cot:
 
         km_final = st.number_input("KMS", value=float(distancia_real_km), key="km_input_main") 
 
-        # --- CÁLCULO DINÁMICO DEL FSC (Basado en Opción A) ---
+        # --- LÓGICA DE CPK AUTOMÁTICO ---
+        cpk_base = 0.0
+        if tipo_op in ["Importación", "Exportación"]:
+            if km_final > 0:
+                if km_final <= 199:
+                    cpk_base = 19.10
+                elif km_final <= 249:
+                    cpk_base = 19.00
+                elif km_final <= 349:
+                    cpk_base = 18.22
+                elif km_final <= 499:
+                    cpk_base = 18.42
+                else:
+                    cpk_base = 17.30
+                
+                if tipo_equipo == "Caja Propia":
+                    cpk_base += 1.65
+        else:
+            cpk_base = st.number_input("CPK Base Manual (Nacional) $", value=0.0)
+
+        if tipo_op in ["Importación", "Exportación"] and km_final > 0:
+            st.success(f"⚙️ **CPK Automático Aplicado:** ${cpk_base:.2f} MXN ({tipo_equipo})")
+
+        # --- CÁLCULO DE IPK MOVIDO A LA PANTALLA PRINCIPAL ---
+        st.markdown("---")
+        c_cpk, c_ipk = st.columns(2)
+        with c_cpk:
+            st.metric("Costo Por Kilómetro (CPK)", f"${cpk_base:.2f}")
+            
+        with c_ipk:
+            if moneda_neg == "MXN (Pesos)":
+                ipk_pactado = st.number_input("IPK Objetivo (MXN) $", value=cpk_base / 0.75 if cpk_base > 0 else 0.0)
+                ipk_mxn_final = ipk_pactado
+                moneda_tag = "MXN"
+            else:
+                ipk_pactado = st.number_input("IPK Objetivo (USD) $", value=(cpk_base / 0.75) / tc if cpk_base > 0 else 0.0)
+                ipk_mxn_final = ipk_pactado * tc
+                moneda_tag = "USD"
+
+        margen_real = (1 - (cpk_base / ipk_mxn_final)) * 100 if ipk_mxn_final > 0 else 0
+
+        # --- CÁLCULO DINÁMICO DEL FSC ---
+        st.markdown("---")
         total_fsc_mxn = (km_final / rendimiento) * precio_diesel if rendimiento > 0 else 0
         st.info(f"⛽ **FSC Proyectado:** {km_final} km ÷ {rendimiento} km/L x ${precio_diesel:,.2f} = **${total_fsc_mxn:,.2f} MXN**")
 
@@ -218,7 +217,6 @@ with tab_cot:
             total_extras_mxn = casetas + total_cpac + total_accesorios_mxn
 
         flete_neto_mxn = km_final * ipk_mxn_final
-        # Sumamos el FSC al total a facturar
         total_mxn_neto = flete_neto_mxn + total_extras_mxn + total_fsc_mxn
         total_usd_neto = total_mxn_neto / tc
 
@@ -266,7 +264,6 @@ with tab_cot:
     st.subheader("🚀 Acciones")
     a1, a2, a3 = st.columns(3)
 
-    # Formateo de fecha al estilo del PDF: "febrero 27, 2026"
     meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
     fecha_hoy_dt = datetime.now()
     fecha_texto = f"{meses[fecha_hoy_dt.month - 1]} {fecha_hoy_dt.day}, {fecha_hoy_dt.year}"
@@ -275,59 +272,56 @@ with tab_cot:
         if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
             nombres_accesorios = ", ".join(detalle_accesorios.keys()) if detalle_accesorios else "Ninguno"
             
+            # NUEVA SÁBANA DE HISTORIAL COMPLETO
             st.session_state.historial.insert(0, {
                 "Fecha": datetime.now().strftime("%d/%m %H:%M"),
                 "Empresa": empresa_cliente,
                 "Atención": atencion_cliente,
+                "Servicio": tipo_op,
+                "Tipo Equipo": tipo_equipo,
                 "Ruta": f"{orig}-{dest}",
                 "KMS": km_final,
                 "Moneda": moneda_tag,
-                "IPK Pactado": round(ipk_pactado, 2),
+                "TC": tc,
                 "CPK Base": round(cpk_base, 2),
+                "IPK Pactado": round(ipk_pactado, 2),
+                "Flete Neto": round(flete_neto_mxn, 2),
                 "FSC": round(total_fsc_mxn, 2),
                 "Casetas": round(casetas, 2),
-                "Factor CPAC": round(factor_cpac, 2),
-                "Total CPAC": round(total_cpac, 2),
+                "Total Extras": round(total_extras_mxn, 2),
                 "Accesorios Incluidos": nombres_accesorios,
-                "Total Accesorios": round(total_accesorios_mxn, 2),
-                "TC": tc,
-                "Total": round(total_mxn_neto, 2),
+                "Total MXN": round(total_mxn_neto, 2),
+                "Total USD": round(total_usd_neto, 2),
                 "Margen Flete %": round(margen_real, 1)
             })
-            st.toast(f"✅ Guardado con éxito en {moneda_tag}")
+            st.toast(f"✅ Guardado en Historial Completo")
 
     with a2:
         pdf = FPDF()
         pdf.add_page()
         
-        # --- ENCABEZADO Y LOGO TEXTUAL ---
         pdf.set_font("Arial", "B", 20)
-        pdf.set_text_color(0, 51, 102) # Azul oscuro para dar aspecto corporativo
+        pdf.set_text_color(0, 51, 102) 
         pdf.cell(0, 10, empresa_remitente, ln=True, align='L')
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 8, "COTIZACIÓN", ln=True, align='R')
         
-        # --- FECHA Y LUGAR ---
         pdf.set_font("Arial", "", 10)
         pdf.cell(0, 5, f"{lugar_expedicion} {fecha_texto}", ln=True, align='R')
         pdf.ln(5)
         
-        # --- DATOS DEL CLIENTE ---
         pdf.set_font("Arial", "B", 10)
         pdf.cell(0, 5, f"Para. {empresa_cliente}", ln=True)
         pdf.cell(0, 5, f"Atención. {atencion_cliente}", ln=True)
         pdf.ln(5)
         
-        # --- INTRODUCCIÓN ---
         pdf.set_font("Arial", "", 10)
         pdf.multi_cell(0, 5, "Por medio de la presente cotización, informo a usted las tarifas que actualmente manejamos en las siguientes rutas y/o servicios:")
         pdf.ln(4)
         
-        # --- TABLA EXACTA DEL FORMATO ---
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(220, 220, 220)
-        # Anchos de columna que sumen ~190 (ancho de hoja)
         w_orig = 35; w_dest = 35; w_serv = 20; w_kms = 15; w_flete = 20; w_cas = 20; w_fsc = 20; w_tot = 25
         
         pdf.cell(w_orig, 8, "Origen", border=1, fill=True, align='C')
@@ -341,7 +335,6 @@ with tab_cot:
         pdf.ln()
         
         pdf.set_font("Arial", "", 8)
-        # Recorte de nombres para que entren en la celda
         pdf.cell(w_orig, 8, orig[:20], border=1, align='C')
         pdf.cell(w_dest, 8, dest[:20], border=1, align='C')
         pdf.cell(w_serv, 8, tipo_op, border=1, align='C')
@@ -362,7 +355,6 @@ with tab_cot:
                 pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${datos['subtotal']:,.2f}", ln=True)
             pdf.ln(2)
 
-        # --- CLÁUSULAS (REPARADO: SIN VIÑETAS ESPECIALES) ---
         pdf.ln(3)
         pdf.set_font("Arial", "B", 9)
         pdf.cell(0, 5, "Caja Regular", ln=True)
@@ -370,7 +362,6 @@ with tab_cot:
         pdf.ln(2)
         
         pdf.set_font("Arial", "", 8)
-        # CAMBIO: Usamos guiones estándar (-) en lugar de puntos (•) para evitar el error de codificación
         clausulas_str = (
             "Propuesta vigente por 30 dias para su aceptacion, posteriormente sera valida por 12 meses. Sujeto a disponibilidad de equipo.\n\n"
             "EL COSTO POR VARIACION DE DIESEL (FSC) SE ACTUALIZARA DE ACUERDO AL COMPORTAMIENTO DE LOS PRECIOS EN COMBUSTIBLES.\n\n"
@@ -393,12 +384,10 @@ with tab_cot:
         )
         pdf.multi_cell(0, 4, clausulas_str)
         
-        # --- CIERRE Y FIRMAS ---
         pdf.ln(5)
         pdf.cell(0, 5, "Esperando recibir su preferencia, quedo a sus ordenes.", ln=True)
         pdf.ln(8)
         
-        # Firmas alineadas (Tú a la izquierda, Cliente a la derecha)
         pdf.set_font("Arial", "B", 9)
         pdf.cell(95, 5, "Atentamente", align='C')
         pdf.cell(95, 5, "Acepto Tarifas y Condiciones", align='C', ln=True)
@@ -414,14 +403,12 @@ with tab_cot:
         pdf.cell(95, 5, empresa_cliente, align='C', ln=True)
 
         try:
-            # Codificamos a latin-1 para el PDF
             pdf_out = pdf.output(dest='S').encode('latin-1')
             st.download_button("📄 Descargar PDF", pdf_out, f"Cotizacion_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
         except Exception as e:
             st.error(f"Error generando PDF: {e}")
 
     with a3:
-        # --- MENSAJE DE WHATSAPP ---
         wa_text = f"*{empresa_remitente} - COTIZACIÓN*\n\n"
         wa_text += f"*Fecha:* {fecha_texto}\n"
         wa_text += f"*Para:* {empresa_cliente}\n"
