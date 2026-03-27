@@ -85,7 +85,7 @@ with st.sidebar:
     mult_peaje = 2.5
 
 # --- 3. ÁREA PRINCIPAL CON 4 PESTAÑAS ---
-tab_cot, tab_rx, tab_hist, tab_config = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial", "⚙️ Configuración ABC"])
+tab_cot, tab_rx, tab_hist, tab_config = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial", "⚙️ Configuración Costeo"])
 
 # --- VARIABLES DEL CEREBRO ABC (CARGADAS DESDE MEMORIA) ---
 w_llantas = st.session_state.w_llantas
