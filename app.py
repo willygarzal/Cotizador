@@ -106,7 +106,7 @@ with tab_cot:
     col_ruta, col_extras = st.columns([2, 1])
 
     with col_ruta:
-        st.subheader("📍 Ruta y Extracción de Peajes")
+        st.subheader("📍 Ruta ")
         c1, c2 = st.columns(2)
         orig = c1.text_input("Origen", "")
         dest = c2.text_input("Destino", "")
