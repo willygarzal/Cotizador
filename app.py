@@ -21,6 +21,10 @@ if 'historial' not in st.session_state:
     st.session_state.historial = []
 if 'rutas_propuesta' not in st.session_state:
     st.session_state.rutas_propuesta = []
+if 'ruta_previa' not in st.session_state:
+    st.session_state.ruta_previa = ""
+if 'km_editado' not in st.session_state:
+    st.session_state.km_editado = 0.0
 
 default_params = {
     "w_llantas": 0.624, "w_mtto": 1.092, "w_admin": 4.16, "w_operador": 1.8928, "w_carga_soc": 35.0,
@@ -77,11 +81,10 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("⚙️ Ajustes Margen")
-    margen_objetivo = st.number_input("🎯 Margen Base Objetivo (%)", value=25.0, step=1.0)
+    margen_objetivo = st.number_input("🎯 Margen Neto Objetivo (%)", value=25.0, step=1.0)
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
     telefono_wa = st.text_input("WhatsApp Cliente", "")
 
-    # Multiplicador oculto para mantener limpia la interfaz comercial
     mult_peaje = 2.5
 
 # --- 3. ÁREA PRINCIPAL CON 4 PESTAÑAS ---
@@ -113,45 +116,53 @@ with tab_cot:
         
         distancia_real_km = 0.0
         costo_peaje_pesado = 0.0
+        ruta_actual = f"{orig}-{dest}"
         
         if orig and dest:
             try:
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
                 st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
                 
-                routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
-                headers = {"Content-Type": "application/json", "X-Goog-Api-Key": api_key, "X-Goog-FieldMask": "routes.distanceMeters,routes.travelAdvisory.tollInfo"}
-                payload = {"origin": {"address": orig}, "destination": {"address": dest}, "travelMode": "DRIVE", "extraComputations": ["TOLLS"]}
-                resp = requests.post(routes_url, json=payload, headers=headers)
-                
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if "routes" in data and len(data["routes"]) > 0:
-                        ruta_data = data["routes"][0]
-                        if "distanceMeters" in ruta_data: distancia_real_km = round(ruta_data["distanceMeters"] / 1000.0, 1)
-                        if "travelAdvisory" in ruta_data and "tollInfo" in ruta_data["travelAdvisory"]:
-                            peajes = ruta_data["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
-                            for peaje in peajes:
-                                if peaje.get("currencyCode") == "MXN":
-                                    costo_auto = float(peaje.get("units", "0")) + (float(peaje.get("nanos", 0)) / 1e9)
-                                    costo_peaje_pesado = costo_auto * mult_peaje
-                else:
-                    res_basico = gmaps.directions(orig, dest)
-                    if res_basico: distancia_real_km = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
-                
-                # --- INYECCIÓN AUTOMÁTICA DEL KILOMETRAJE ---
-                st.session_state.km_input_main = float(distancia_real_km)
+                # Solo llama a la API y actualiza el KM sugerido si la ruta cambió
+                if ruta_actual != st.session_state.ruta_previa:
+                    routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+                    headers = {"Content-Type": "application/json", "X-Goog-Api-Key": api_key, "X-Goog-FieldMask": "routes.distanceMeters,routes.travelAdvisory.tollInfo"}
+                    payload = {"origin": {"address": orig}, "destination": {"address": dest}, "travelMode": "DRIVE", "extraComputations": ["TOLLS"]}
+                    resp = requests.post(routes_url, json=payload, headers=headers)
+                    
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if "routes" in data and len(data["routes"]) > 0:
+                            ruta_data = data["routes"][0]
+                            if "distanceMeters" in ruta_data: distancia_real_km = round(ruta_data["distanceMeters"] / 1000.0, 1)
+                            if "travelAdvisory" in ruta_data and "tollInfo" in ruta_data["travelAdvisory"]:
+                                peajes = ruta_data["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
+                                for peaje in peajes:
+                                    if peaje.get("currencyCode") == "MXN":
+                                        costo_auto = float(peaje.get("units", "0")) + (float(peaje.get("nanos", 0)) / 1e9)
+                                        costo_peaje_pesado = costo_auto * mult_peaje
+                    else:
+                        res_basico = gmaps.directions(orig, dest)
+                        if res_basico: distancia_real_km = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
+                    
+                    st.session_state.km_editado = float(distancia_real_km)
+                    st.session_state.ruta_previa = ruta_actual
 
             except Exception as e:
                 st.info("Calculando ruta avanzada...")
 
-        km_final = st.number_input("KMS", value=float(distancia_real_km), key="km_input_main") 
+        # El campo de KM ahora es libre y no se sobreescribe
+        km_final = st.number_input("KMS", value=float(st.session_state.km_editado), format="%.2f")
+        st.session_state.km_editado = km_final
 
-        # --- MOTOR FINANCIERO ORIGINAL ---
+        # --- MOTOR FINANCIERO (CON FÓRMULA DE MARGEN NETO) ---
         cpk_piso_flete = 0.0
         costo_operador = 0.0
         costo_llantas_mtto = 0.0
         costo_admin_viaje = 0.0
+        costo_seg_gps_viaje = 0.0
+        costo_deprec_viaje = 0.0
+        total_fsc_mxn = km_final * factor_calculado
         
         if km_final > 0:
             es_largo = km_final > 400
@@ -160,29 +171,35 @@ with tab_cot:
             w_km_mes_caja = st.session_state.km_mes_caja_largo if es_largo else st.session_state.km_mes_caja_corto
             gasto_op_viaje = st.session_state.gasto_op_largo if es_largo else st.session_state.gasto_op_corto
             
+            w_km_mes_tracto_calc = w_km_mes_tracto if w_km_mes_tracto > 0 else 1
+            w_km_mes_caja_calc = w_km_mes_caja if w_km_mes_caja > 0 else 1
+
             costo_operador = (km_final * w_operador * (1 + (w_carga_soc/100))) + gasto_op_viaje
             costo_llantas_mtto = km_final * (w_llantas + w_mtto)
             costo_admin_viaje = km_final * w_admin
+            costo_seg_gps_viaje = km_final * ((w_seguro + w_gps_tracto) / w_km_mes_tracto_calc) + (km_final * (w_gps_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0)
+            costo_deprec_viaje = km_final * (w_dep_tracto / w_km_mes_tracto_calc) + (km_final * (w_dep_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0)
             
-            costo_fijo_tracto_km = (w_seguro + w_gps_tracto + w_dep_tracto) / w_km_mes_tracto if w_km_mes_tracto > 0 else 0
-            costo_fijo_tracto_viaje = km_final * costo_fijo_tracto_km
-            
-            if tipo_equipo == "Caja Propia":
-                costo_fijo_caja_km = (w_gps_caja + w_dep_caja) / w_km_mes_caja if w_km_mes_caja > 0 else 0
-                costo_fijo_caja_viaje = km_final * costo_fijo_caja_km
-            else:
-                costo_fijo_caja_viaje = 0.0
-                
-            costo_piso_total = costo_operador + costo_llantas_mtto + costo_admin_viaje + costo_fijo_tracto_viaje + costo_fijo_caja_viaje
+            costo_piso_total = costo_operador + costo_llantas_mtto + costo_admin_viaje + costo_seg_gps_viaje + costo_deprec_viaje
             cpk_piso_flete = costo_piso_total / km_final
             
-            st.success(f"⚖️ **Costo Operativo Base:** ${cpk_piso_flete:.2f} MXN por km | Modalidad: {tipo_equipo}")
+            st.success(f"⚖️ **Costo Total (Inc. Fijos):** ${cpk_piso_flete:.2f} MXN por km | Modalidad: {tipo_equipo}")
 
         st.markdown("---")
         c_cpk, c_ipk = st.columns(2)
         with c_cpk:
-            ipk_sugerido_mxn = cpk_piso_flete * (1 + (margen_objetivo / 100)) if km_final > 0 else 0.0
-            st.metric(f"Tarifa Sugerida (Margen {margen_objetivo}%)", f"${ipk_sugerido_mxn:.2f}")
+            # Fórmula matemática para garantizar el margen neto sobre la factura total
+            costos_completos_proyectados = (cpk_piso_flete * km_final) + total_fsc_mxn + costo_peaje_pesado
+            margen_decimal = margen_objetivo / 100.0
+            
+            if km_final > 0 and margen_decimal < 1:
+                venta_total_requerida = costos_completos_proyectados / (1 - margen_decimal)
+                flete_requerido = venta_total_requerida - total_fsc_mxn - costo_peaje_pesado
+                ipk_sugerido_mxn = flete_requerido / km_final
+            else:
+                ipk_sugerido_mxn = 0.0
+                
+            st.metric(f"Tarifa Sugerida (Margen Neto {margen_objetivo}%)", f"${ipk_sugerido_mxn:.2f}")
             
         with c_ipk:
             if moneda_neg == "MXN (Pesos)":
@@ -195,7 +212,6 @@ with tab_cot:
                 moneda_tag = "USD"
 
         st.markdown("---")
-        total_fsc_mxn = km_final * factor_calculado
         st.info(f"⛽ **FSC Proyectado:** Factor ${factor_calculado:.2f} (Rend. Base: {rendimiento_base}) = **${total_fsc_mxn:,.2f} MXN**")
 
     with col_extras:
@@ -230,15 +246,7 @@ with tab_cot:
         total_mxn_neto = flete_neto_mxn + total_extras_mxn + total_fsc_mxn
         total_usd_neto = total_mxn_neto / tc
 
-    # --- CÁLCULO FINAL DE UTILIDAD PARA EL KPI ---
-    w_km_mes_tracto_calc = st.session_state.km_mes_tracto_largo if km_final > 400 else st.session_state.km_mes_tracto_corto
-    w_km_mes_caja_calc = st.session_state.km_mes_caja_largo if km_final > 400 else st.session_state.km_mes_caja_corto
-    w_km_mes_tracto_calc = w_km_mes_tracto_calc if w_km_mes_tracto_calc > 0 else 1
-    w_km_mes_caja_calc = w_km_mes_caja_calc if w_km_mes_caja_calc > 0 else 1
-
-    costo_seg_gps_viaje = km_final * ((w_seguro + w_gps_tracto) / w_km_mes_tracto_calc) + (km_final * (w_gps_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0) if km_final > 0 else 0
-    costo_deprec_viaje = km_final * (w_dep_tracto / w_km_mes_tracto_calc) + (km_final * (w_dep_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0) if km_final > 0 else 0
-    
+    # --- CÁLCULO FINAL DE UTILIDAD PARA LOS KPIs ---
     ebitda_viaje_actual = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - costo_seg_gps_viaje
     utilidad_neta_viaje_actual = ebitda_viaje_actual - costo_deprec_viaje
     
@@ -250,12 +258,13 @@ with tab_cot:
     with kpi2: st.metric(label="TOTAL A FACTURAR USD", value=f"${total_usd_neto:,.2f}", delta=f"TC: {tc}")
     with kpi3: st.metric(label=f"IPK Facturado ({moneda_tag})", value=f"${ipk_pactado:.2f}")
     with kpi4:
+        color_delta = "normal" if margen_neto_real >= margen_objetivo else ("off" if margen_neto_real >= 0 else "inverse")
         if utilidad_neta_viaje_actual < 0: st.error("🚨 ¡PÉRDIDA DETECTADA! La tarifa no cubre los costos totales.")
         st.metric(
             label="Utilidad Neta del Viaje", 
             value=f"${utilidad_neta_viaje_actual:,.2f}", 
             delta=f"Margen Neto Real: {margen_neto_real:.1f}%", 
-            delta_color="normal" if utilidad_neta_viaje_actual >= 0 else "inverse"
+            delta_color=color_delta
         )
 
     # --- SISTEMA MULTIRUTA (CARRITO) ---
@@ -268,8 +277,6 @@ with tab_cot:
                     "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
                     "Flete": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
                     "Extras": total_extras_mxn - casetas, "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
-                    "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
-                    "LlantasMtto": costo_llantas_mtto if km_final > 0 else 0, "Admin": costo_admin_viaje if km_final > 0 else 0,
                     "Ajuste_Comb": total_ajuste_comb, "Accesorios": total_accesorios_mxn,
                     "EBITDA": ebitda_viaje_actual, "Utilidad_Neta": utilidad_neta_viaje_actual
                 })
@@ -298,8 +305,6 @@ with tab_cot:
                 "Flete Neto": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
                 "Ajuste_Comb": total_ajuste_comb, "Accesorios_Monto": total_accesorios_mxn,
                 "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
-                "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
-                "LlantasMtto": costo_llantas_mtto if km_final > 0 else 0, "Admin": costo_admin_viaje if km_final > 0 else 0,
                 "EBITDA": ebitda_viaje_actual, "Utilidad_Neta": utilidad_neta_viaje_actual
             }]
             for r in rutas_a_guardar:
@@ -307,7 +312,6 @@ with tab_cot:
                 f_conv = (1/tc) if moneda_ruta == "USD (Dólares)" else 1
                 ingreso_total_mxn = r.get("Total MXN", total_mxn_neto)
                 utilidad_neta_mxn = r.get("Utilidad_Neta", 0)
-                margen_neto_pct = (utilidad_neta_mxn / ingreso_total_mxn) * 100 if ingreso_total_mxn > 0 else 0
                 
                 st.session_state.historial.insert(0, {
                     "Fecha": datetime.now().strftime("%d/%m %H:%M"), "Empresa Cliente": empresa_cliente, "Contacto Cliente": atencion_cliente,
@@ -318,11 +322,6 @@ with tab_cot:
                     "Ajuste Combustible": round(r.get("Ajuste_Comb", total_ajuste_comb) * f_conv, 2),
                     "Accesorios": nombres_accesorios, "Monto Accs": round(r.get("Accesorios_Monto", r.get("Accesorios", total_accesorios_mxn)) * f_conv, 2),
                     "Total MXN": round(ingreso_total_mxn, 2), "Total USD": round(r.get("Total USD", total_usd_neto), 2), 
-                    "Costo Piso Fijo (MXN)": round(r.get("Costo_Directo", cpk_piso_flete * km_final), 2),
-                    "Costo Operador (MXN)": round(r.get("Operador", costo_operador), 2),
-                    "Costo Llantas/Mtto (MXN)": round(r.get("LlantasMtto", costo_llantas_mtto), 2),
-                    "Costo Admin (MXN)": round(r.get("Admin", costo_admin_viaje), 2),
-                    "Margen Neto %": round(margen_neto_pct, 1),
                     "EBITDA": round(r.get("EBITDA", 0) * f_conv, 2),
                     "Utilidad Neta": round(utilidad_neta_mxn * f_conv, 2)
                 })
