@@ -76,7 +76,7 @@ with st.sidebar:
     st.subheader(f"${factor_calculado:.2f} / km")
     
     st.markdown("---")
-    st.header("⚙️ Negociación y Ajustes")
+    st.header("⚙️ Ajustes Margen")
     margen_objetivo = st.number_input("🎯 Margen Comercial Objetivo (%)", value=25.0, step=1.0)
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
     telefono_wa = st.text_input("WhatsApp Cliente", "")
@@ -390,7 +390,7 @@ with tab_cot:
 
 # --- PESTAÑA 2: TABLERO FINANCIERO DIRECTIVO ---
 with tab_rx:
-    st.markdown("## 📊 Radiografía Financiera (Directivo)")
+    st.markdown("## 📊 Radiografía Financiera ")
     if km_final > 0:
         st.info("Este tablero evalúa la rentabilidad del tramo que tienes configurado actualmente en la Pestaña 1.")
         
