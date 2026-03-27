@@ -57,23 +57,23 @@ with st.sidebar:
     st.markdown("---")
     st.header("⛽ Combustible (FSC)")
     precio_diesel = st.number_input("Precio Diésel ($/L)", value=24.50, step=0.50)
+    # --- NUEVO: RENDIMIENTO EDITABLE (BASE 2.7) ---
+    rendimiento_base = st.number_input("Rendimiento (km/L)", value=2.70, step=0.05)
     
-    st.markdown("#### Factor Diésel de Referencia:")
-    factor_espejo = (precio_diesel / 3.1) + 0.90
-    st.subheader(f"${factor_espejo:.2f} / km")
-    st.caption("Para rutas > 400km (Rend 3.1 + Ajuste $0.90)")
+    factor_calculado = precio_diesel / rendimiento_base if rendimiento_base > 0 else 0
+    st.markdown("#### Factor Diésel Resultante:")
+    st.subheader(f"${factor_calculado:.2f} / km")
     
     st.markdown("---")
     st.header("⚙️ Negociación y Ajustes")
-    # --- NUEVO: MARGEN OBJETIVO ---
     margen_objetivo = st.number_input("🎯 Margen Comercial Objetivo (%)", value=25.0, step=1.0)
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
     mult_peaje = st.number_input("Multiplicador Carga Pesada (T3S2)", value=2.5, step=0.1)
     telefono_wa = st.text_input("WhatsApp Cliente", "")
 
-    # --- NUEVO: MOTOR DE COSTEO WILLY (OCULTO PARA NO ENSUCIAR LA VISTA) ---
-    with st.expander("🔬 Parámetros Base (Costeo ABC Willy)", expanded=False):
-        st.caption("Edita los valores si hay inflación o cambios en la flota.")
+    # --- NUEVO: MOTOR DE COSTEO OPERATIVO (ABC) ---
+    with st.expander("🔬 Parámetros de Costeo Operativo (ABC)", expanded=False):
+        st.caption("Valores base para calcular el costo real de la ruta.")
         w_llantas = st.number_input("Llantas ($/km)", value=0.624, step=0.01)
         w_mtto = st.number_input("Mto. Motriz ($/km)", value=1.092, step=0.01)
         w_admin = st.number_input("Gasto Admin ($/km)", value=4.16, step=0.01)
@@ -88,7 +88,7 @@ with st.sidebar:
 tab_cot, tab_rx, tab_hist = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial Completo"])
 
 with tab_cot:
-    st.markdown("## Resumen de Cotización (Operación Híbrida)")
+    st.markdown("## Resumen de Cotización (Operación Basada en Costos)")
 
     col_ruta, col_extras = st.columns([2, 1])
 
@@ -144,13 +144,17 @@ with tab_cot:
 
         km_final = st.number_input("KMS", value=float(distancia_real_km), key="km_input_main") 
 
-        # --- REEMPLAZO TOTAL: COSTEO ABC EN VIVO (MÉTODO WILLY) ---
+        # --- COSTEO ABC EN VIVO COMO BASE (PISO) ---
         cpk_piso_flete = 0.0
+        costo_operador = 0.0
+        costo_llantas_mtto = 0.0
+        costo_admin_viaje = 0.0
+        costo_fijo_viaje = 0.0
+        
         if km_final > 0:
             w_km_mes = 18500.0 if km_final > 400 else 13500.0
             gasto_op_viaje = 230.0 if km_final > 400 else 88.0
             
-            # Suma de costos reales del viaje (sin diésel ni peajes)
             costo_operador = (km_final * w_operador * (1 + (w_carga_soc/100))) + gasto_op_viaje
             costo_llantas_mtto = km_final * (w_llantas + w_mtto)
             costo_admin_viaje = km_final * w_admin
@@ -158,11 +162,10 @@ with tab_cot:
             factor_fijo_km = (w_seguro + w_gps + w_dep_tracto + w_dep_caja) / w_km_mes if w_km_mes > 0 else 0
             costo_fijo_viaje = km_final * factor_fijo_km
             
-            # Costo Base del Flete
             costo_piso_total = costo_operador + costo_llantas_mtto + costo_admin_viaje + costo_fijo_viaje
             cpk_piso_flete = costo_piso_total / km_final
             
-            st.success(f"⚖️ **Costo Piso Real (Flete):** ${cpk_piso_flete:.2f} MXN por km")
+            st.success(f"⚖️ **Costo Operativo Real (Flete):** ${cpk_piso_flete:.2f} MXN por km")
 
         st.markdown("---")
         c_cpk, c_ipk = st.columns(2)
@@ -183,17 +186,8 @@ with tab_cot:
         margen_real = ((ipk_mxn_final - cpk_piso_flete) / cpk_piso_flete) * 100 if cpk_piso_flete > 0 else 0.0
 
         st.markdown("---")
-        # --- LÓGICA DE MOTOR DIÉSEL ACORDADA ---
-        if km_final <= 400:
-            rendimiento_uso = 2.7
-            ajuste_extra = 0.0
-        else:
-            rendimiento_uso = 3.1
-            ajuste_extra = 0.90
-
-        factor_calculado = (precio_diesel / rendimiento_uso) + ajuste_extra
         total_fsc_mxn = km_final * factor_calculado
-        st.info(f"⛽ **FSC Proyectado:** Factor ${factor_calculado:.2f} (Rend: {rendimiento_uso} | Ajuste: ${ajuste_extra}) = **${total_fsc_mxn:,.2f} MXN**")
+        st.info(f"⛽ **FSC Proyectado:** Factor ${factor_calculado:.2f} (Rend. Base: {rendimiento_base}) = **${total_fsc_mxn:,.2f} MXN**")
 
     with col_extras:
         st.subheader("💰 Cargos Extra y Accesorios")
@@ -201,11 +195,12 @@ with tab_cot:
             st.markdown("**Cargos Fijos de Ruta**")
             col_f1, col_f2 = st.columns(2)
             casetas = col_f1.number_input("Casetas Grales. API ($)", value=float(costo_peaje_pesado))
-            factor_cpac = col_f2.number_input("Factor CPAC ($/km)", 0.0, format="%.2f")
-            total_cpac = km_final * factor_cpac
+            # --- NUEVO: AJUSTE DE COMBUSTIBLE EN VEZ DE CPAC ---
+            factor_ajuste_comb = col_f2.number_input("Ajuste Combustible ($/km)", 0.0, format="%.2f")
+            total_ajuste_comb = km_final * factor_ajuste_comb
             
-            if total_cpac > 0:
-                st.caption(f"Total CPAC: **${total_cpac:,.2f}**")
+            if total_ajuste_comb > 0:
+                st.caption(f"Total Ajuste Combustible: **${total_ajuste_comb:,.2f}**")
             
             st.markdown("---")
             st.markdown("**Listado de Accesorios Adicionales**")
@@ -222,7 +217,7 @@ with tab_cot:
                     total_accesorios_mxn += subtotal
                     detalle_accesorios[acc] = {"cantidad": cant, "costo": costo, "subtotal": subtotal}
 
-            total_extras_mxn = casetas + total_cpac + total_accesorios_mxn
+            total_extras_mxn = casetas + total_ajuste_comb + total_accesorios_mxn
 
         flete_neto_mxn = km_final * ipk_mxn_final
         total_mxn_neto = flete_neto_mxn + total_extras_mxn + total_fsc_mxn
@@ -248,12 +243,18 @@ with tab_cot:
     with col_btn_add:
         if st.button("➕ Añadir este Tramo a la Propuesta", use_container_width=True, type="primary"):
             if orig and dest:
+                # Calculo la Utilidad Neta para guardarla en el historial
+                ebitda_tramo = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes) if w_km_mes > 0 else 0
+                utilidad_neta_tramo = ebitda_tramo - (km_final * (w_dep_tracto + w_dep_caja)/w_km_mes) if w_km_mes > 0 else 0
+                
                 st.session_state.rutas_propuesta.append({
                     "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
                     "Flete": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
                     "Extras": total_extras_mxn - casetas, "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
-                    "Costo_Directo": costo_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
-                    "LlantasMtto": costo_llantas_mtto if km_final > 0 else 0, "Admin": costo_admin_viaje if km_final > 0 else 0
+                    "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
+                    "LlantasMtto": costo_llantas_mtto if km_final > 0 else 0, "Admin": costo_admin_viaje if km_final > 0 else 0,
+                    "Ajuste_Comb": total_ajuste_comb, "Accesorios": total_accesorios_mxn,
+                    "EBITDA": ebitda_tramo, "Utilidad_Neta": utilidad_neta_tramo
                 })
                 st.toast(f"✅ Tramo añadido a la propuesta")
     with col_btn_clear:
@@ -274,14 +275,35 @@ with tab_cot:
 
     with a1:
         if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
-            rutas_a_guardar = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{"Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final, "Flete Neto": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, "Total Extras": total_extras_mxn, "Total MXN": total_mxn_neto, "Total USD": total_usd_neto}]
+            nombres_accesorios = ", ".join(detalle_accesorios.keys()) if detalle_accesorios else "Ninguno"
+            rutas_a_guardar = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{
+                "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
+                "Flete Neto": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
+                "Ajuste_Comb": total_ajuste_comb, "Accesorios_Monto": total_accesorios_mxn,
+                "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
+                "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
+                "LlantasMtto": costo_llantas_mtto if km_final > 0 else 0, "Admin": costo_admin_viaje if km_final > 0 else 0,
+                "EBITDA": total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0),
+                "Utilidad_Neta": (total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0)) - (km_final * (w_dep_tracto + w_dep_caja)/w_km_mes if w_km_mes > 0 else 0)
+            }]
             for r in rutas_a_guardar:
                 st.session_state.historial.insert(0, {
-                    "Fecha": datetime.now().strftime("%d/%m %H:%M"), "Empresa": empresa_cliente, "Ruta": f"{r['Origen']}-{r['Destino']}",
-                    "KMS": r["KM"], "Moneda": moneda_tag, "TC": tc, "Flete Neto": round(r.get("Flete", r.get("Flete Neto", flete_neto_mxn)), 2),
-                    "FSC": round(r["FSC"], 2), "Total MXN": round(r["Total MXN"], 2), "Margen %": round(margen_real, 1)
+                    "Fecha": datetime.now().strftime("%d/%m %H:%M"), "Empresa": empresa_cliente,
+                    "Ruta": f"{r['Origen']}-{r['Destino']}", "KMS": r["KM"], "Servicio": r.get("Servicio", tipo_op),
+                    "Moneda": moneda_tag, "TC": tc, "Flete Neto": round(r.get("Flete", r.get("Flete Neto", flete_neto_mxn)), 2),
+                    "FSC": round(r["FSC"], 2), "Casetas": round(r["Casetas"], 2), 
+                    "Ajuste Combustible": round(r.get("Ajuste_Comb", total_ajuste_comb), 2),
+                    "Accesorios": nombres_accesorios, "Monto Accs": round(r.get("Accesorios_Monto", r.get("Accesorios", total_accesorios_mxn)), 2),
+                    "Total MXN": round(r["Total MXN"], 2), "Total USD": round(r["Total USD"], 2), 
+                    "Costo Piso Total": round(r.get("Costo_Directo", cpk_piso_flete * km_final), 2),
+                    "Costo Operador": round(r.get("Operador", costo_operador), 2),
+                    "Costo Llantas/Mtto": round(r.get("LlantasMtto", costo_llantas_mtto), 2),
+                    "Costo Admin": round(r.get("Admin", costo_admin_viaje), 2),
+                    "Margen Comercial %": round(margen_real, 1),
+                    "EBITDA ($)": round(r.get("EBITDA", 0), 2),
+                    "Utilidad Neta ($)": round(r.get("Utilidad_Neta", 0), 2)
                 })
-            st.toast("✅ Guardado en Historial")
+            st.toast("✅ Sábana Financiera Guardada en Historial")
 
     with a2:
         pdf = FPDF()
@@ -307,9 +329,9 @@ with tab_cot:
             pdf.cell(20, 8, f"${(r['Flete'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(20, 8, f"${(r['Casetas'] * f_conv):,.2f}", 1, 0, 'C')
             pdf.cell(20, 8, f"${(r['FSC'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(25, 8, f"${(r['Total MXN'] * f_conv):,.2f}", 1, 1, 'C')
             
-        if total_cpac > 0 or detalle_accesorios:
+        if total_ajuste_comb > 0 or detalle_accesorios:
             pdf.ln(2); pdf.set_font("Arial", "B", 8); pdf.cell(0, 5, f"Cargos Adicionales ({moneda_tag}):", ln=True); pdf.set_font("Arial", "", 8)
-            if total_cpac > 0: pdf.cell(0, 5, f"  - CPAC Operativo: ${(total_cpac * f_conv):,.2f}", ln=True)
+            if total_ajuste_comb > 0: pdf.cell(0, 5, f"  - Ajuste de Combustible: ${(total_ajuste_comb * f_conv):,.2f}", ln=True)
             for acc, datos in detalle_accesorios.items(): pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${(datos['subtotal'] * f_conv):,.2f}", ln=True)
 
         pdf.ln(5); pdf.set_font("Arial", "", 8)
@@ -327,6 +349,7 @@ with tab_cot:
         wa_text = f"*{empresa_remitente} - COTIZACIÓN*\n\n*Fecha:* {fecha_texto}\n*Para:* {empresa_cliente}\n\n"
         rutas_wa = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{"Origen": orig, "Destino": dest, "KM": km_final, "Total MXN": total_mxn_neto}]
         for r in rutas_wa: wa_text += f"📍 {r['Origen']} a {r['Destino']} ({r['KM']} KMS)\n"
+        if total_ajuste_comb > 0: wa_text += f"• *Ajuste de Combustible:* ${total_ajuste_comb:,.2f}\n"
         wa_text += f"\n💰 *TOTAL:* ${gran_total_mxn:,.2f} {moneda_tag}\n\n*Acepto Tarifas y Condiciones*"
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; width:100%; padding:10px; border-radius:5px; border:none; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
@@ -336,8 +359,9 @@ with tab_rx:
     if km_final > 0:
         st.info("Este tablero evalúa la rentabilidad del tramo que tienes configurado actualmente en la Pestaña 1.")
         
-        ebitda = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes)
-        utilidad_neta = ebitda - (km_final * (w_dep_tracto + w_dep_caja)/w_km_mes)
+        # EBITDA y Utilidad recalculada con los valores vivos del cotizador
+        ebitda = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0)
+        utilidad_neta = ebitda - (km_final * (w_dep_tracto + w_dep_caja)/w_km_mes if w_km_mes > 0 else 0)
         margen_ebitda = (ebitda / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
         margen_neto = (utilidad_neta / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
 
@@ -351,10 +375,15 @@ with tab_rx:
             st.write(f"- **Sueldo, Carga Social y Op. Fijo:** ${costo_operador:,.2f}")
             st.write(f"- **Llantas y Mantenimiento:** ${costo_llantas_mtto:,.2f}")
             st.write(f"- **Gasto Administrativo Asignado:** ${costo_admin_viaje:,.2f}")
-            st.write(f"- **Seguros y Satélite:** ${(km_final * (w_seguro + w_gps)/w_km_mes):,.2f}")
-            st.write(f"- **Depreciación Fierros:** ${(km_final * (w_dep_tracto + w_dep_caja)/w_km_mes):,.2f}")
+            st.write(f"- **Seguros y Satélite:** ${(km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0):,.2f}")
+            st.write(f"- **Depreciación Fierros:** ${(km_final * (w_dep_tracto + w_dep_caja)/w_km_mes if w_km_mes > 0 else 0):,.2f}")
     else:
         st.warning("⚠️ Ingresa los KMS en el Cotizador para ver el análisis de rentabilidad.")
 
+# --- PESTAÑA 3: HISTORIAL Y AUDITORÍA ---
 with tab_hist:
-    if st.session_state.historial: st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
+    st.markdown("## 📜 Sábana Financiera de Auditoría")
+    if st.session_state.historial: 
+        st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
+    else:
+        st.info("Aún no hay cotizaciones guardadas. Cuando guardes una, aparecerá aquí con el desglose de todos los costos (Operador, Llantas, EBITDA, etc.).")
