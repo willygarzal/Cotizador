@@ -68,7 +68,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("⛽ Combustible (FSC)")
-    precio_diesel = st.number_input("Precio Diésel ($/L)", value=24.50, step=0.50)
+    precio_diesel = st.number_input("Precio Diésel ($/L)", value=24.57, step=0.50)
     rendimiento_base = st.number_input("Rendimiento (km/L)", value=2.70, step=0.05)
     
     factor_calculado = precio_diesel / rendimiento_base if rendimiento_base > 0 else 0
