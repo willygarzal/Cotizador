@@ -63,7 +63,7 @@ with st.sidebar:
     empresa_cliente = st.text_input("Para: (Empresa)", "")
     atencion_cliente = st.text_input("Atención: (Contacto)", "")
     tipo_op = st.selectbox("Servicio", ["Importación", "Exportación", "Nacional"])
-    tipo_equipo = st.radio("Tipo de Equipo", ["Caja de Intercambio (Tercero)", "Caja Propia"])
+    tipo_equipo = st.radio("Tipo de Equipo", ["Caja de Intercambio ", "Caja Propia"])
     tc = st.number_input("Tipo de Cambio (MXN/USD)", value=17.50, step=0.1)
     
     st.markdown("---")
