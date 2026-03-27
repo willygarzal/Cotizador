@@ -79,8 +79,10 @@ with st.sidebar:
     st.header("⚙️ Negociación y Ajustes")
     margen_objetivo = st.number_input("🎯 Margen Comercial Objetivo (%)", value=25.0, step=1.0)
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
-    mult_peaje = st.number_input("Multiplicador Carga Pesada (T3S2)", value=2.5, step=0.1)
     telefono_wa = st.text_input("WhatsApp Cliente", "")
+
+    # Multiplicador oculto para mantener limpia la interfaz comercial
+    mult_peaje = 2.5
 
 # --- 3. ÁREA PRINCIPAL CON 4 PESTAÑAS ---
 tab_cot, tab_rx, tab_hist, tab_config = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial", "⚙️ Configuración ABC"])
@@ -136,6 +138,10 @@ with tab_cot:
                 else:
                     res_basico = gmaps.directions(orig, dest)
                     if res_basico: distancia_real_km = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
+                
+                # --- INYECCIÓN AUTOMÁTICA DEL KILOMETRAJE ---
+                st.session_state.km_input_main = float(distancia_real_km)
+
             except Exception as e:
                 st.info("Calculando ruta avanzada...")
 
