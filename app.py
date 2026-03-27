@@ -56,7 +56,12 @@ with st.sidebar:
     st.markdown("---")
     st.header("⛽ Combustible (FSC)")
     precio_diesel = st.number_input("Precio Diésel ($/L)", value=24.50, step=0.50)
-    rendimiento = st.number_input("Rendimiento (km/L)", value=2.7, step=0.1)
+    
+    # --- MOTOR DIÉSEL: ESPEJO VISUAL ---
+    st.markdown("#### Factor Diésel de Referencia:")
+    factor_espejo = (precio_diesel / 3.1) + 0.90
+    st.subheader(f"${factor_espejo:.2f} / km")
+    st.caption("Para rutas > 400km (Rend 3.1 + Ajuste $0.90)")
     
     st.markdown("---")
     st.header("⚙️ Negociación y Ajustes")
@@ -173,8 +178,17 @@ with tab_cot:
         margen_real = ((ipk_mxn_final - cpk_base) / cpk_base) * 100 if cpk_base > 0 else 0.0
 
         st.markdown("---")
-        total_fsc_mxn = (km_final / rendimiento) * precio_diesel if rendimiento > 0 else 0
-        st.info(f"⛽ **FSC Proyectado:** {km_final} km ÷ {rendimiento} km/L x ${precio_diesel:,.2f} = **${total_fsc_mxn:,.2f} MXN**")
+        # --- LÓGICA DE MOTOR DIÉSEL ACORDADA ---
+        if km_final <= 400:
+            rendimiento_uso = 2.7
+            ajuste_extra = 0.0
+        else:
+            rendimiento_uso = 3.1
+            ajuste_extra = 0.90
+
+        factor_calculado = (precio_diesel / rendimiento_uso) + ajuste_extra
+        total_fsc_mxn = km_final * factor_calculado
+        st.info(f"⛽ **FSC Proyectado:** Factor ${factor_calculado:.2f} (Rend: {rendimiento_uso} | Ajuste: ${ajuste_extra}) = **${total_fsc_mxn:,.2f} MXN**")
 
     with col_extras:
         st.subheader("💰 Cargos Extra y Accesorios")
