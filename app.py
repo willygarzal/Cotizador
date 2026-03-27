@@ -72,7 +72,7 @@ with st.sidebar:
     rendimiento_base = st.number_input("Rendimiento (km/L)", value=2.70, step=0.05)
     
     factor_calculado = precio_diesel / rendimiento_base if rendimiento_base > 0 else 0
-    st.markdown("#### Factor Diésel Resultante:")
+    st.markdown("#### Factor Diésel ")
     st.subheader(f"${factor_calculado:.2f} / km")
     
     st.markdown("---")
