@@ -448,7 +448,7 @@ with tab_config:
         st.session_state.w_dep_caja = st.number_input("Depreciación Caja ($/mes)", value=st.session_state.w_dep_caja, step=10.0)
         
         st.markdown("---")
-        st.subheader("4. Metas de Kilometraje Mensual (Prorrateo)")
+        st.subheader("4. Metas de Kilometraje Mensual ")
         c_km1, c_km2 = st.columns(2)
         with c_km1:
             st.markdown("**Tractor**")
