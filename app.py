@@ -51,6 +51,8 @@ with st.sidebar:
     empresa_cliente = st.text_input("Para: (Empresa)", "")
     atencion_cliente = st.text_input("Atención: (Contacto)", "")
     tipo_op = st.selectbox("Servicio", ["Importación", "Exportación", "Nacional"])
+    
+    # --- BOTÓN CLAVE PARA CAJA PROPIA VS TERCERO ---
     tipo_equipo = st.radio("Tipo de Equipo", ["Caja de Intercambio (Tercero)", "Caja Propia"])
     tc = st.number_input("Tipo de Cambio (MXN/USD)", value=17.50, step=0.1)
     
@@ -70,6 +72,7 @@ with st.sidebar:
     mult_peaje = st.number_input("Multiplicador Carga Pesada (T3S2)", value=2.5, step=0.1)
     telefono_wa = st.text_input("WhatsApp Cliente", "")
 
+    # --- COSTOS SEPARADOS PARA TRACTOR Y CAJA ---
     with st.expander("🔬 Parámetros de Costeo Operativo (ABC)", expanded=False):
         st.caption("Valores base para calcular el costo real de la ruta.")
         w_llantas = st.number_input("Llantas ($/km)", value=0.624, step=0.01)
@@ -78,7 +81,8 @@ with st.sidebar:
         w_operador = st.number_input("Sueldo Op. Base ($/km)", value=1.8928, step=0.01)
         w_carga_soc = st.number_input("Carga Social (%)", value=35.0, step=1.0)
         w_seguro = st.number_input("Seguro Tractor ($/mes)", value=5000.0, step=100.0)
-        w_gps = st.number_input("GPS ($/mes)", value=1443.99, step=10.0)
+        w_gps_tracto = st.number_input("GPS Tractor ($/mes)", value=1228.74, step=10.0)
+        w_gps_caja = st.number_input("GPS Caja ($/mes)", value=215.25, step=10.0)
         w_dep_tracto = st.number_input("Deprec. Tractor ($/mes)", value=20628.08, step=100.0)
         w_dep_caja = st.number_input("Deprec. Caja ($/mes)", value=2975.0, step=10.0)
 
@@ -142,7 +146,7 @@ with tab_cot:
 
         km_final = st.number_input("KMS", value=float(distancia_real_km), key="km_input_main") 
 
-        # --- COSTEO ABC EN VIVO COMO BASE (PISO) ---
+        # --- COSTEO ABC EN VIVO COMO BASE (OPCIÓN A: CAJA PROPIA VS TERCERO) ---
         cpk_piso_flete = 0.0
         costo_operador = 0.0
         costo_llantas_mtto = 0.0
@@ -157,13 +161,19 @@ with tab_cot:
             costo_llantas_mtto = km_final * (w_llantas + w_mtto)
             costo_admin_viaje = km_final * w_admin
             
-            factor_fijo_km = (w_seguro + w_gps + w_dep_tracto + w_dep_caja) / w_km_mes if w_km_mes > 0 else 0
+            # LÓGICA DE FIJOS SEGÚN EQUIPO
+            if tipo_equipo == "Caja Propia":
+                fijos_mes = w_seguro + w_gps_tracto + w_gps_caja + w_dep_tracto + w_dep_caja
+            else:
+                fijos_mes = w_seguro + w_gps_tracto + w_dep_tracto
+                
+            factor_fijo_km = fijos_mes / w_km_mes if w_km_mes > 0 else 0
             costo_fijo_viaje = km_final * factor_fijo_km
             
             costo_piso_total = costo_operador + costo_llantas_mtto + costo_admin_viaje + costo_fijo_viaje
             cpk_piso_flete = costo_piso_total / km_final
             
-            st.success(f"⚖️ **Costo Operativo Real (Flete):** ${cpk_piso_flete:.2f} MXN por km")
+            st.success(f"⚖️ **Costo Operativo Base:** ${cpk_piso_flete:.2f} MXN por km | Modalidad: {tipo_equipo}")
 
         st.markdown("---")
         c_cpk, c_ipk = st.columns(2)
@@ -234,15 +244,20 @@ with tab_cot:
             st.error("🚨 ¡PÉRDIDA DETECTADA! Tarifa por debajo del costo.")
         st.metric(label="Margen Comercial Real", value=f"{margen_real:.1f}%", delta=f"{margen_real - margen_objetivo:.1f}% vs Obj.", delta_color=color_delta)
 
+    # --- VARIABLES DE RENTABILIDAD GLOBAL ---
+    w_km_mes_calc = 18500.0 if km_final > 400 else 13500.0 if km_final > 0 else 1
+    costo_seg_gps_viaje = km_final * ((w_seguro + w_gps_tracto + (w_gps_caja if tipo_equipo == "Caja Propia" else 0)) / w_km_mes_calc) if km_final > 0 else 0
+    costo_deprec_viaje = km_final * ((w_dep_tracto + (w_dep_caja if tipo_equipo == "Caja Propia" else 0)) / w_km_mes_calc) if km_final > 0 else 0
+    
+    ebitda_viaje_actual = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - costo_seg_gps_viaje
+    utilidad_neta_viaje_actual = ebitda_viaje_actual - costo_deprec_viaje
+
     # --- SISTEMA MULTIRUTA (CARRITO) ---
     st.markdown("---")
     col_btn_add, col_btn_clear = st.columns([3, 1])
     with col_btn_add:
         if st.button("➕ Añadir este Tramo a la Propuesta", use_container_width=True, type="primary"):
             if orig and dest:
-                ebitda_tramo = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes) if w_km_mes > 0 else 0
-                utilidad_neta_tramo = ebitda_tramo - (km_final * (w_dep_tracto + w_dep_caja)/w_km_mes) if w_km_mes > 0 else 0
-                
                 st.session_state.rutas_propuesta.append({
                     "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
                     "Flete": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
@@ -250,7 +265,7 @@ with tab_cot:
                     "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
                     "LlantasMtto": costo_llantas_mtto if km_final > 0 else 0, "Admin": costo_admin_viaje if km_final > 0 else 0,
                     "Ajuste_Comb": total_ajuste_comb, "Accesorios": total_accesorios_mxn,
-                    "EBITDA": ebitda_tramo, "Utilidad_Neta": utilidad_neta_tramo
+                    "EBITDA": ebitda_viaje_actual, "Utilidad_Neta": utilidad_neta_viaje_actual
                 })
                 st.toast(f"✅ Tramo añadido a la propuesta")
     with col_btn_clear:
@@ -279,8 +294,8 @@ with tab_cot:
                 "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
                 "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
                 "LlantasMtto": costo_llantas_mtto if km_final > 0 else 0, "Admin": costo_admin_viaje if km_final > 0 else 0,
-                "EBITDA": total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0),
-                "Utilidad_Neta": (total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0)) - (km_final * (w_dep_tracto + w_dep_caja)/w_km_mes if w_km_mes > 0 else 0)
+                "EBITDA": ebitda_viaje_actual,
+                "Utilidad_Neta": utilidad_neta_viaje_actual
             }]
             for r in rutas_a_guardar:
                 moneda_ruta = r.get("Moneda", moneda_tag)
@@ -297,6 +312,7 @@ with tab_cot:
                     "Ruta": f"{r['Origen']}-{r['Destino']}", 
                     "KMS": r["KM"], 
                     "Servicio": r.get("Servicio", tipo_op),
+                    "Equipo": tipo_equipo,
                     "Moneda": moneda_ruta, 
                     "TC": tc, 
                     "Flete Cotizado": round(r.get("Flete", r.get("Flete Neto", flete_neto_mxn)) * f_conv, 2),
@@ -440,23 +456,21 @@ with tab_rx:
     if km_final > 0:
         st.info("Este tablero evalúa la rentabilidad del tramo que tienes configurado actualmente en la Pestaña 1.")
         
-        ebitda = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0)
-        utilidad_neta = ebitda - (km_final * (w_dep_tracto + w_dep_caja)/w_km_mes if w_km_mes > 0 else 0)
-        margen_ebitda = (ebitda / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
-        margen_neto = (utilidad_neta / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
+        margen_ebitda = (ebitda_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
+        margen_neto = (utilidad_neta_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
 
         k1, k2, k3 = st.columns(3)
         k1.metric("Ingreso Total (Venta)", f"${total_mxn_neto:,.2f}")
-        k2.metric("EBITDA (Flujo)", f"${ebitda:,.2f}", f"{margen_ebitda:.1f}% Margen", delta_color="normal" if ebitda>0 else "inverse")
-        k3.metric("Utilidad Neta del Viaje", f"${utilidad_neta:,.2f}", f"{margen_neto:.1f}% Margen", delta_color="normal" if utilidad_neta>0 else "inverse")
+        k2.metric("EBITDA (Flujo)", f"${ebitda_viaje_actual:,.2f}", f"{margen_ebitda:.1f}% Margen", delta_color="normal" if ebitda_viaje_actual>0 else "inverse")
+        k3.metric("Utilidad Neta del Viaje", f"${utilidad_neta_viaje_actual:,.2f}", f"{margen_neto:.1f}% Margen", delta_color="normal" if utilidad_neta_viaje_actual>0 else "inverse")
 
         with st.expander("🔍 Desglose de Egresos", expanded=True):
             st.write(f"- **Diésel y Peajes (Paso directo):** ${(total_fsc_mxn + casetas):,.2f}")
             st.write(f"- **Sueldo, Carga Social y Op. Fijo:** ${costo_operador:,.2f}")
             st.write(f"- **Llantas y Mantenimiento:** ${costo_llantas_mtto:,.2f}")
             st.write(f"- **Gasto Administrativo Asignado:** ${costo_admin_viaje:,.2f}")
-            st.write(f"- **Seguros y Satélite:** ${(km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0):,.2f}")
-            st.write(f"- **Depreciación Fierros:** ${(km_final * (w_dep_tracto + w_dep_caja)/w_km_mes if w_km_mes > 0 else 0):,.2f}")
+            st.write(f"- **Seguros y Satélite:** ${costo_seg_gps_viaje:,.2f}")
+            st.write(f"- **Depreciación Fierros:** ${costo_deprec_viaje:,.2f}")
     else:
         st.warning("⚠️ Ingresa los KMS en el Cotizador para ver el análisis de rentabilidad.")
 
