@@ -269,7 +269,7 @@ with tab_cot:
     a1, a2, a3 = st.columns(3)
     fecha_texto = f"{['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][datetime.now().month - 1]} {datetime.now().day}, {datetime.now().year}"
 
-    with a1:
+        with a1:
         if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
             nombres_accesorios = ", ".join(detalle_accesorios.keys()) if detalle_accesorios else "Ninguno"
             rutas_a_guardar = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{
@@ -283,6 +283,15 @@ with tab_cot:
                 "Utilidad_Neta": (total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - (km_final * (w_seguro + w_gps)/w_km_mes if w_km_mes > 0 else 0)) - (km_final * (w_dep_tracto + w_dep_caja)/w_km_mes if w_km_mes > 0 else 0)
             }]
             for r in rutas_a_guardar:
+                # 1. Identificar si es USD para transformar los ingresos
+                moneda_ruta = r.get("Moneda", moneda_tag)
+                f_conv = (1/tc) if moneda_ruta == "USD" else 1
+                
+                # 2. Calcular el % de Utilidad Neta
+                ingreso_total_mxn = r.get("Total MXN", total_mxn_neto)
+                utilidad_neta_mxn = r.get("Utilidad_Neta", 0)
+                margen_neto_pct = (utilidad_neta_mxn / ingreso_total_mxn) * 100 if ingreso_total_mxn > 0 else 0
+                
                 st.session_state.historial.insert(0, {
                     "Fecha": datetime.now().strftime("%d/%m %H:%M"), 
                     "Empresa Cliente": empresa_cliente,
@@ -290,23 +299,27 @@ with tab_cot:
                     "Ruta": f"{r['Origen']}-{r['Destino']}", 
                     "KMS": r["KM"], 
                     "Servicio": r.get("Servicio", tipo_op),
-                    "Moneda": moneda_tag, 
+                    "Moneda": moneda_ruta, 
                     "TC": tc, 
-                    "Flete Neto": round(r.get("Flete", r.get("Flete Neto", flete_neto_mxn)), 2),
-                    "FSC": round(r["FSC"], 2), 
-                    "Casetas": round(r["Casetas"], 2), 
-                    "Ajuste Combustible": round(r.get("Ajuste_Comb", total_ajuste_comb), 2),
+                    # --- VALORES DE COTIZACIÓN (Cambian a USD si aplica) ---
+                    "Flete Cotizado": round(r.get("Flete", r.get("Flete Neto", flete_neto_mxn)) * f_conv, 2),
+                    "FSC Cotizado": round(r["FSC"] * f_conv, 2), 
+                    "Casetas Cotizadas": round(r["Casetas"] * f_conv, 2), 
+                    "Ajuste Combustible": round(r.get("Ajuste_Comb", total_ajuste_comb) * f_conv, 2),
                     "Accesorios": nombres_accesorios, 
-                    "Monto Accs": round(r.get("Accesorios_Monto", r.get("Accesorios", total_accesorios_mxn)), 2),
-                    "Total MXN": round(r["Total MXN"], 2), 
-                    "Total USD": round(r["Total USD"], 2), 
-                    "Costo Piso Total": round(r.get("Costo_Directo", cpk_piso_flete * km_final), 2),
-                    "Costo Operador": round(r.get("Operador", costo_operador), 2),
-                    "Costo Llantas/Mtto": round(r.get("LlantasMtto", costo_llantas_mtto), 2),
-                    "Costo Admin": round(r.get("Admin", costo_admin_viaje), 2),
+                    "Monto Accs": round(r.get("Accesorios_Monto", r.get("Accesorios", total_accesorios_mxn)) * f_conv, 2),
+                    "Total MXN": round(ingreso_total_mxn, 2), 
+                    "Total USD": round(r.get("Total USD", total_usd_neto), 2), 
+                    # --- COSTOS OPERATIVOS PUROS (Siempre en MXN) ---
+                    "Costo Piso Fijo (MXN)": round(r.get("Costo_Directo", cpk_piso_flete * km_final), 2),
+                    "Costo Operador (MXN)": round(r.get("Operador", costo_operador), 2),
+                    "Costo Llantas/Mtto (MXN)": round(r.get("LlantasMtto", costo_llantas_mtto), 2),
+                    "Costo Admin (MXN)": round(r.get("Admin", costo_admin_viaje), 2),
+                    # --- KPIS Y RENTABILIDAD ---
                     "Margen Comercial %": round(margen_real, 1),
-                    "EBITDA ($)": round(r.get("EBITDA", 0), 2),
-                    "Utilidad Neta ($)": round(r.get("Utilidad_Neta", 0), 2)
+                    "EBITDA": round(r.get("EBITDA", 0) * f_conv, 2),
+                    "Utilidad Neta": round(utilidad_neta_mxn * f_conv, 2),
+                    "% Utilidad Neta": round(margen_neto_pct, 1)
                 })
             st.toast("✅ Sábana Financiera Guardada en Historial")
 
