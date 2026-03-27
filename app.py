@@ -435,7 +435,7 @@ with tab_config:
         st.session_state.w_admin = st.number_input("Gasto Administrativo Asignado ($/km)", value=st.session_state.w_admin, step=0.01)
         
         st.markdown("---")
-        st.subheader("2. Gastos Operativos por Evento")
+        st.subheader("2. Gastos Operativos ")
         st.session_state.gasto_op_largo = st.number_input("Gasto Op. Ruta Larga (>400km) ($)", value=st.session_state.gasto_op_largo, step=10.0)
         st.session_state.gasto_op_corto = st.number_input("Gasto Op. Tramo Corto (<=400km) ($)", value=st.session_state.gasto_op_corto, step=10.0)
         
