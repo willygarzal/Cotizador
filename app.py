@@ -77,7 +77,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("⚙️ Ajustes Margen")
-    margen_objetivo = st.number_input("🎯 Margen Comercial Objetivo (%)", value=25.0, step=1.0)
+    margen_objetivo = st.number_input("🎯 Margen Neto Objetivo (%)", value=25.0, step=1.0)
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
     telefono_wa = st.text_input("WhatsApp Cliente", "")
 
@@ -152,6 +152,8 @@ with tab_cot:
         costo_operador = 0.0
         costo_llantas_mtto = 0.0
         costo_admin_viaje = 0.0
+        costo_seg_gps_viaje = 0.0
+        costo_deprec_viaje = 0.0
         
         if km_final > 0:
             es_largo = km_final > 400
@@ -164,25 +166,27 @@ with tab_cot:
             costo_llantas_mtto = km_final * (w_llantas + w_mtto)
             costo_admin_viaje = km_final * w_admin
             
-            costo_fijo_tracto_km = (w_seguro + w_gps_tracto + w_dep_tracto) / w_km_mes_tracto if w_km_mes_tracto > 0 else 0
-            costo_fijo_tracto_viaje = km_final * costo_fijo_tracto_km
+            w_km_mes_tracto_calc = w_km_mes_tracto if w_km_mes_tracto > 0 else 1
+            w_km_mes_caja_calc = w_km_mes_caja if w_km_mes_caja > 0 else 1
+
+            costo_seg_gps_viaje = km_final * ((w_seguro + w_gps_tracto) / w_km_mes_tracto_calc) + (km_final * (w_gps_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0)
+            costo_deprec_viaje = km_final * (w_dep_tracto / w_km_mes_tracto_calc) + (km_final * (w_dep_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0)
             
-            if tipo_equipo == "Caja Propia":
-                costo_fijo_caja_km = (w_gps_caja + w_dep_caja) / w_km_mes_caja if w_km_mes_caja > 0 else 0
-                costo_fijo_caja_viaje = km_final * costo_fijo_caja_km
-            else:
-                costo_fijo_caja_viaje = 0.0
-                
-            costo_piso_total = costo_operador + costo_llantas_mtto + costo_admin_viaje + costo_fijo_tracto_viaje + costo_fijo_caja_viaje
+            costo_piso_total = costo_operador + costo_llantas_mtto + costo_admin_viaje + costo_seg_gps_viaje + costo_deprec_viaje
             cpk_piso_flete = costo_piso_total / km_final
             
-            st.success(f"⚖️ **Costo Operativo Base:** ${cpk_piso_flete:.2f} MXN por km | Modalidad: {tipo_equipo}")
+            st.success(f"⚖️ **Costo Total (Inc. Fijos):** ${cpk_piso_flete:.2f} MXN por km | Modalidad: {tipo_equipo}")
 
         st.markdown("---")
         c_cpk, c_ipk = st.columns(2)
         with c_cpk:
-            ipk_sugerido_mxn = cpk_piso_flete * (1 + (margen_objetivo / 100)) if km_final > 0 else 0.0
-            st.metric(f"Tarifa Sugerida (Margen {margen_objetivo}%)", f"${ipk_sugerido_mxn:.2f}")
+            margen_decimal = margen_objetivo / 100.0
+            if km_final > 0 and margen_decimal < 1:
+                ipk_sugerido_mxn = cpk_piso_flete / (1 - margen_decimal)
+            else:
+                ipk_sugerido_mxn = 0.0
+                
+            st.metric(f"Tarifa Sugerida (Margen Neto {margen_objetivo}%)", f"${ipk_sugerido_mxn:.2f}")
             
         with c_ipk:
             if moneda_neg == "MXN (Pesos)":
@@ -193,8 +197,6 @@ with tab_cot:
                 ipk_pactado = st.number_input("IPK a Facturar (USD) $", value=float(ipk_sugerido_mxn / tc) if tc > 0 else 0.0)
                 ipk_mxn_final = ipk_pactado * tc
                 moneda_tag = "USD"
-
-        margen_real = ((ipk_mxn_final - cpk_piso_flete) / cpk_piso_flete) * 100 if cpk_piso_flete > 0 else 0.0
 
         st.markdown("---")
         total_fsc_mxn = km_final * factor_calculado
@@ -232,27 +234,26 @@ with tab_cot:
         total_mxn_neto = flete_neto_mxn + total_extras_mxn + total_fsc_mxn
         total_usd_neto = total_mxn_neto / tc
 
+    # --- CÁLCULO FINAL DE UTILIDAD Y KPIs ---
+    ebitda_viaje_actual = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - costo_seg_gps_viaje
+    utilidad_neta_viaje_actual = ebitda_viaje_actual - costo_deprec_viaje
+    
+    margen_neto_real = (utilidad_neta_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0.0
+
     st.markdown("---")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1: st.metric(label="TOTAL A FACTURAR MXN", value=f"${total_mxn_neto:,.2f}")
     with kpi2: st.metric(label="TOTAL A FACTURAR USD", value=f"${total_usd_neto:,.2f}", delta=f"TC: {tc}")
     with kpi3: st.metric(label=f"IPK Facturado ({moneda_tag})", value=f"${ipk_pactado:.2f}")
     with kpi4:
-        color_delta = "normal" if margen_real >= margen_objetivo else ("off" if margen_real >= 0 else "inverse")
-        if margen_real < 0: st.error("🚨 ¡PÉRDIDA DETECTADA! Tarifa por debajo del costo.")
-        st.metric(label="Margen Comercial Real", value=f"{margen_real:.1f}%", delta=f"{margen_real - margen_objetivo:.1f}% vs Obj.", delta_color=color_delta)
-
-    # --- VARIABLES GLOBALES DE RENTABILIDAD PARA ESTA RUTA ---
-    w_km_mes_tracto_calc = st.session_state.km_mes_tracto_largo if km_final > 400 else st.session_state.km_mes_tracto_corto
-    w_km_mes_caja_calc = st.session_state.km_mes_caja_largo if km_final > 400 else st.session_state.km_mes_caja_corto
-    w_km_mes_tracto_calc = w_km_mes_tracto_calc if w_km_mes_tracto_calc > 0 else 1
-    w_km_mes_caja_calc = w_km_mes_caja_calc if w_km_mes_caja_calc > 0 else 1
-
-    costo_seg_gps_viaje = km_final * ((w_seguro + w_gps_tracto) / w_km_mes_tracto_calc) + (km_final * (w_gps_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0) if km_final > 0 else 0
-    costo_deprec_viaje = km_final * (w_dep_tracto / w_km_mes_tracto_calc) + (km_final * (w_dep_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0) if km_final > 0 else 0
-    
-    ebitda_viaje_actual = total_mxn_neto - total_fsc_mxn - casetas - total_accesorios_mxn - costo_operador - costo_llantas_mtto - costo_admin_viaje - costo_seg_gps_viaje
-    utilidad_neta_viaje_actual = ebitda_viaje_actual - costo_deprec_viaje
+        color_delta = "normal" if margen_neto_real >= margen_objetivo else ("off" if margen_neto_real >= 0 else "inverse")
+        if margen_neto_real < 0: st.error("🚨 ¡PÉRDIDA DETECTADA! La tarifa no cubre los costos totales.")
+        st.metric(
+            label="Utilidad Neta del Viaje", 
+            value=f"${utilidad_neta_viaje_actual:,.2f}", 
+            delta=f"{margen_neto_real:.1f}% Margen (Obj: {margen_objetivo}%)", 
+            delta_color=color_delta
+        )
 
     # --- SISTEMA MULTIRUTA (CARRITO) ---
     st.markdown("---")
@@ -318,10 +319,9 @@ with tab_cot:
                     "Costo Operador (MXN)": round(r.get("Operador", costo_operador), 2),
                     "Costo Llantas/Mtto (MXN)": round(r.get("LlantasMtto", costo_llantas_mtto), 2),
                     "Costo Admin (MXN)": round(r.get("Admin", costo_admin_viaje), 2),
-                    "Margen Comercial %": round(margen_real, 1),
+                    "Margen Neto %": round(margen_neto_pct, 1),
                     "EBITDA": round(r.get("EBITDA", 0) * f_conv, 2),
-                    "Utilidad Neta": round(utilidad_neta_mxn * f_conv, 2),
-                    "% Utilidad Neta": round(margen_neto_pct, 1)
+                    "Utilidad Neta": round(utilidad_neta_mxn * f_conv, 2)
                 })
             st.toast("✅ Sábana Financiera Guardada en Historial")
 
