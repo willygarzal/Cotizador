@@ -18,6 +18,10 @@ st.set_page_config(page_title="Cotizador Maestro 53' Pro - Consolidado", layout=
 
 if 'historial' not in st.session_state:
     st.session_state.historial = []
+    
+# --- NUEVO: INICIALIZAR MEMORIA MULTIRUTA ---
+if 'rutas_propuesta' not in st.session_state:
+    st.session_state.rutas_propuesta = []
 
 # --- DICCIONARIOS DE COSTOS ---
 precios_accesorios = {
@@ -271,6 +275,45 @@ with tab_cot:
             delta_color=color_delta
         )
 
+    # --- NUEVO: SISTEMA MULTIRUTA (CARRITO) ---
+    st.markdown("---")
+    col_btn_add, col_btn_clear = st.columns([3, 1])
+    with col_btn_add:
+        if st.button("➕ Añadir este Tramo a la Propuesta", use_container_width=True, type="primary"):
+            if orig and dest:
+                st.session_state.rutas_propuesta.append({
+                    "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
+                    "Flete": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
+                    "Extras": total_extras_mxn - casetas, "Total MXN": total_mxn_neto, "Total USD": total_usd_neto
+                })
+                st.toast(f"✅ Tramo {orig} - {dest} añadido a la propuesta")
+            else:
+                st.warning("⚠️ Ingresa Origen y Destino para poder añadir el tramo.")
+    with col_btn_clear:
+        if st.button("🗑️ Limpiar Tramos", use_container_width=True):
+            st.session_state.rutas_propuesta = []
+            st.rerun()
+
+    gran_total_mxn = total_mxn_neto
+    gran_total_usd = total_usd_neto
+
+    if st.session_state.rutas_propuesta:
+        st.markdown("### 📋 Desglose de Propuesta Multiruta")
+        df_prop = pd.DataFrame(st.session_state.rutas_propuesta)
+        
+        st.dataframe(
+            df_prop[["Origen", "Destino", "Servicio", "KM", "Flete", "FSC", "Casetas", "Extras", "Total MXN"]].style.format({
+                "Flete": "${:,.2f}", "FSC": "${:,.2f}", "Casetas": "${:,.2f}", 
+                "Extras": "${:,.2f}", "Total MXN": "${:,.2f}"
+            }),
+            use_container_width=True
+        )
+        
+        gran_total_mxn = df_prop["Total MXN"].sum()
+        gran_total_usd = df_prop["Total USD"].sum()
+        
+        st.info(f"**GRAN TOTAL ACUMULADO:** **${gran_total_mxn:,.2f} MXN** | **${gran_total_usd:,.2f} USD**")
+
     st.markdown("---")
     st.subheader("🚀 Acciones")
     a1, a2, a3 = st.columns(3)
@@ -283,27 +326,34 @@ with tab_cot:
         if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
             nombres_accesorios = ", ".join(detalle_accesorios.keys()) if detalle_accesorios else "Ninguno"
             
-            st.session_state.historial.insert(0, {
-                "Fecha": datetime.now().strftime("%d/%m %H:%M"),
-                "Empresa": empresa_cliente,
-                "Atención": atencion_cliente,
-                "Servicio": tipo_op,
-                "Tipo Equipo": tipo_equipo,
-                "Ruta": f"{orig}-{dest}",
-                "KMS": km_final,
-                "Moneda": moneda_tag,
-                "TC": tc,
-                "CPK Base": round(cpk_base, 2),
-                "IPK Pactado": round(ipk_pactado, 2),
-                "Flete Neto": round(flete_neto_mxn, 2),
-                "FSC": round(total_fsc_mxn, 2),
-                "Casetas": round(casetas, 2),
-                "Total Extras": round(total_extras_mxn, 2),
-                "Accesorios Incluidos": nombres_accesorios,
-                "Total MXN": round(total_mxn_neto, 2),
-                "Total USD": round(total_usd_neto, 2),
-                "Margen Markup %": round(margen_real, 1)
-            })
+            rutas_a_guardar = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{
+                "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
+                "Flete Neto": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
+                "Total Extras": total_extras_mxn, "Total MXN": total_mxn_neto, "Total USD": total_usd_neto
+            }]
+
+            for r in rutas_a_guardar:
+                st.session_state.historial.insert(0, {
+                    "Fecha": datetime.now().strftime("%d/%m %H:%M"),
+                    "Empresa": empresa_cliente,
+                    "Atención": atencion_cliente,
+                    "Servicio": r.get("Servicio", tipo_op),
+                    "Tipo Equipo": tipo_equipo,
+                    "Ruta": f"{r['Origen']}-{r['Destino']}",
+                    "KMS": r["KM"],
+                    "Moneda": moneda_tag,
+                    "TC": tc,
+                    "CPK Base": round(cpk_base, 2),
+                    "IPK Pactado": round(ipk_pactado, 2),
+                    "Flete Neto": round(r.get("Flete", r.get("Flete Neto", flete_neto_mxn)), 2),
+                    "FSC": round(r["FSC"], 2),
+                    "Casetas": round(r["Casetas"], 2),
+                    "Total Extras": round(r.get("Extras", r.get("Total Extras", total_extras_mxn)), 2),
+                    "Accesorios Incluidos": nombres_accesorios,
+                    "Total MXN": round(r["Total MXN"], 2),
+                    "Total USD": round(r["Total USD"], 2),
+                    "Margen Markup %": round(margen_real, 1)
+                })
             st.toast(f"✅ Guardado en Historial Completo")
 
     with a2:
@@ -345,15 +395,27 @@ with tab_cot:
         pdf.ln()
         
         pdf.set_font("Arial", "", 8)
-        pdf.cell(w_orig, 8, orig[:20], border=1, align='C')
-        pdf.cell(w_dest, 8, dest[:20], border=1, align='C')
-        pdf.cell(w_serv, 8, tipo_op, border=1, align='C')
-        pdf.cell(w_kms, 8, str(km_final), border=1, align='C')
-        pdf.cell(w_flete, 8, f"${flete_neto_mxn:,.2f}", border=1, align='C')
-        pdf.cell(w_cas, 8, f"${casetas:,.2f}", border=1, align='C')
-        pdf.cell(w_fsc, 8, f"${total_fsc_mxn:,.2f}", border=1, align='C')
-        pdf.cell(w_tot, 8, f"${total_mxn_neto:,.2f}", border=1, align='C')
-        pdf.ln(8)
+        
+        rutas_pdf = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{
+            "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
+            "Flete": flete_neto_mxn, "Casetas": casetas, "FSC": total_fsc_mxn, "Total MXN": total_mxn_neto
+        }]
+
+        for r in rutas_pdf:
+            pdf.cell(w_orig, 8, r["Origen"][:20], border=1, align='C')
+            pdf.cell(w_dest, 8, r["Destino"][:20], border=1, align='C')
+            pdf.cell(w_serv, 8, r.get("Servicio", tipo_op)[:10], border=1, align='C')
+            pdf.cell(w_kms, 8, str(r["KM"]), border=1, align='C')
+            pdf.cell(w_flete, 8, f"${r['Flete']:,.2f}", border=1, align='C')
+            pdf.cell(w_cas, 8, f"${r['Casetas']:,.2f}", border=1, align='C')
+            pdf.cell(w_fsc, 8, f"${r['FSC']:,.2f}", border=1, align='C')
+            pdf.cell(w_tot, 8, f"${r['Total MXN']:,.2f}", border=1, align='C')
+            pdf.ln(8)
+            
+        if len(rutas_pdf) > 1:
+            pdf.ln(2)
+            pdf.set_font("Arial", "B", 8)
+            pdf.cell(0, 5, f"GRAN TOTAL PROPUESTA: ${gran_total_mxn:,.2f} MXN", ln=True, align='R')
         
         if total_cpac > 0 or detalle_accesorios:
             pdf.set_font("Arial", "B", 8)
@@ -423,13 +485,33 @@ with tab_cot:
         wa_text += f"*Fecha:* {fecha_texto}\n"
         wa_text += f"*Para:* {empresa_cliente}\n"
         wa_text += f"*Atención:* {atencion_cliente}\n\n"
-        wa_text += f"📍 *Origen:* {orig}\n"
-        wa_text += f"📍 *Destino:* {dest}\n"
-        wa_text += f"🚛 *Servicio:* {tipo_op} | {km_final} KMS\n\n"
-        wa_text += f"• *Flete:* ${flete_neto_mxn:,.2f}\n"
-        wa_text += f"• *Casetas:* ${casetas:,.2f}\n"
-        wa_text += f"• *FSC:* ${total_fsc_mxn:,.2f}\n"
-        wa_text += f"\n💰 *TOTAL:* ${total_mxn_neto:,.2f} {moneda_tag}\n\n"
+        
+        rutas_wa = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{
+            "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
+            "Flete": flete_neto_mxn, "Casetas": casetas, "FSC": total_fsc_mxn, "Total MXN": total_mxn_neto
+        }]
+        
+        for idx, r in enumerate(rutas_wa, 1):
+            if len(rutas_wa) > 1:
+                wa_text += f"*{idx}. Tramo:* {r['Origen']} a {r['Destino']}\n"
+            else:
+                wa_text += f"📍 *Origen:* {r['Origen']}\n"
+                wa_text += f"📍 *Destino:* {r['Destino']}\n"
+            
+            wa_text += f"🚛 *Servicio:* {r.get('Servicio', tipo_op)} | {r['KM']} KMS\n"
+            wa_text += f"• *Flete:* ${r['Flete']:,.2f}\n"
+            wa_text += f"• *Casetas:* ${r['Casetas']:,.2f}\n"
+            wa_text += f"• *FSC:* ${r['FSC']:,.2f}\n"
+            if len(rutas_wa) > 1:
+                wa_text += f"Subtotal Tramo: ${r['Total MXN']:,.2f} MXN\n\n"
+            else:
+                wa_text += f"\n"
+                
+        if len(rutas_wa) > 1:
+            wa_text += f"💰 *GRAN TOTAL:* ${gran_total_mxn:,.2f} MXN\n\n"
+        else:
+            wa_text += f"💰 *TOTAL:* ${gran_total_mxn:,.2f} {moneda_tag}\n\n"
+            
         wa_text += f"_{atencion_cliente}_\n*Acepto Tarifas y Condiciones*"
             
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
