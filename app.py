@@ -76,8 +76,8 @@ with st.sidebar:
     
     telefono_wa = st.text_input("WhatsApp Cliente", "")
 
-# --- 3. ÁREA DE COTIZACIÓN ---
-tab_cot, tab_hist = st.tabs(["🎯 Cotizador Pro", "📜 Historial Completo"])
+# --- 3. ÁREA DE COTIZACIÓN (AHORA CON 3 PESTAÑAS) ---
+tab_cot, tab_rx, tab_hist = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial Completo"])
 
 with tab_cot:
     st.markdown("## Resumen de Cotización (Operación Pura)")
@@ -514,6 +514,86 @@ with tab_cot:
         wa_text += f"_{atencion_cliente}_\n*Acepto Tarifas y Condiciones*"
             
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
+
+# --- NUEVA PESTAÑA: RAYOS X FINANCIEROS ---
+with tab_rx:
+    st.markdown("## 📊 Análisis Financiero del Tramo (Costeo ABC)")
+    if km_final > 0:
+        st.info(f"**Evaluando ruta en tiempo real:** {orig} ➡️ {dest} ({km_final} km) | **Ingreso Cotizado:** ${total_mxn_neto:,.2f} MXN")
+        
+        st.subheader("⚙️ Parámetros de Costeo (Basados en 'Costeo Willy')")
+        st.caption("Modifica estos valores para ver el impacto en el Margen EBITDA y la Utilidad Neta.")
+        
+        col_v1, col_v2, col_v3 = st.columns(3)
+        with col_v1:
+            w_llantas = st.number_input("Llantas ($/km)", value=0.624, step=0.01)
+            w_mtto = st.number_input("Mantenimiento Motriz ($/km)", value=1.092, step=0.01)
+            w_admin = st.number_input("Gasto Administración ($/km)", value=4.16, step=0.01)
+        with col_v2:
+            w_operador = st.number_input("Sueldo Operador Base ($/km)", value=1.8928, step=0.01)
+            w_carga_soc = st.number_input("Carga Social (%)", value=35.0, step=1.0)
+            w_gasto_op = st.number_input("Gasto Operativo Fijo ($/viaje)", value=230.0 if km_final > 400 else 88.0, step=10.0)
+        with col_v3:
+            st.markdown("**Costos Fijos Mensuales**")
+            w_seguro = st.number_input("Seguro Tractor ($/mes)", value=5000.0, step=100.0)
+            w_gps = st.number_input("GPS (Tracto+Caja) ($/mes)", value=1443.99, step=10.0) # 1228.74 + 215.25
+            w_km_mes = st.number_input("KMs Promedio al Mes (Unidad)", value=18500.0 if km_final > 400 else 13500.0, step=500.0)
+
+        st.subheader("📉 Capex / Depreciación Mensual")
+        col_d1, col_d2, _ = st.columns([1, 1, 1])
+        with col_d1:
+            w_dep_tracto = st.number_input("Depreciación Tractor ($/mes)", value=20628.08, step=100.0)
+        with col_d2:
+            w_dep_caja = st.number_input("Depreciación Caja ($/mes)", value=2975.0, step=10.0)
+
+        # --- CÁLCULOS FINANCIEROS INTERNOS ---
+        ingreso_total_eval = total_mxn_neto
+        costo_directo_ruta = total_fsc_mxn + total_extras_mxn # Diésel (bomba) + Casetas + Accesorios
+
+        # Operativos
+        costo_operador_total = (km_final * w_operador * (1 + (w_carga_soc/100))) + w_gasto_op
+        costo_llantas = km_final * w_llantas
+        costo_mtto = km_final * w_mtto
+        costo_admin = km_final * w_admin
+        
+        # Fijos asignados al viaje (Prorrateo)
+        factor_fijo_km = (w_seguro + w_gps) / w_km_mes if w_km_mes > 0 else 0
+        costo_fijo_viaje = km_final * factor_fijo_km
+
+        # EBITDA
+        ebitda = ingreso_total_eval - costo_directo_ruta - costo_operador_total - costo_llantas - costo_mtto - costo_admin - costo_fijo_viaje
+        margen_ebitda = (ebitda / ingreso_total_eval) * 100 if ingreso_total_eval > 0 else 0
+
+        # Depreciación Asignada
+        factor_dep_km = (w_dep_tracto + w_dep_caja) / w_km_mes if w_km_mes > 0 else 0
+        costo_dep_viaje = km_final * factor_dep_km
+
+        # Utilidad Neta (EBIT)
+        utilidad_neta = ebitda - costo_dep_viaje
+        margen_neto = (utilidad_neta / ingreso_total_eval) * 100 if ingreso_total_eval > 0 else 0
+
+        # --- MOSTRAR RESULTADOS (KPIS) ---
+        st.markdown("---")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Ingreso (Venta)", f"${ingreso_total_eval:,.2f}")
+        k2.metric("Costo Total (Sin Deprec.)", f"${(costo_directo_ruta + costo_operador_total + costo_llantas + costo_mtto + costo_admin + costo_fijo_viaje):,.2f}")
+        
+        color_ebitda = "normal" if ebitda > 0 else "inverse"
+        k3.metric("EBITDA (Flujo)", f"${ebitda:,.2f}", f"{margen_ebitda:.1f}% Margen", delta_color=color_ebitda)
+        
+        color_neto = "normal" if utilidad_neta > 0 else "inverse"
+        k4.metric("Utilidad Neta del Tramo", f"${utilidad_neta:,.2f}", f"{margen_neto:.1f}% Margen", delta_color=color_neto)
+
+        with st.expander("🔍 Ver Desglose de Costos de este Viaje", expanded=False):
+            st.write(f"- **Costos Directos Cotizados (Diésel, Casetas, Accs):** ${costo_directo_ruta:,.2f}")
+            st.write(f"- **Costo Operador (Sueldo + Carga Soc + Fijo):** ${costo_operador_total:,.2f}")
+            st.write(f"- **Costo Mantenimiento y Llantas:** ${(costo_mtto + costo_llantas):,.2f}")
+            st.write(f"- **Gasto Administración Asignado:** ${costo_admin:,.2f}")
+            st.write(f"- **Seguros y GPS (Prorrateo por KM):** ${costo_fijo_viaje:,.2f}")
+            st.write(f"- **Depreciación Tracto/Caja (Prorrateo por KM):** ${costo_dep_viaje:,.2f}")
+            st.caption("Nota: El ingreso analizado incluye los accesorios extra que se hayan sumado en la cotización.")
+    else:
+        st.warning("⚠️ Configura primero una ruta (KMS) en la pestaña del Cotizador Pro para ver su análisis financiero.")
 
 with tab_hist:
     st.subheader("📜 Auditoría Detallada")
