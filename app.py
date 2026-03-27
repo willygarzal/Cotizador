@@ -391,7 +391,7 @@ with tab_cot:
         pdf.cell(w_flete, 8, "Flete", border=1, fill=True, align='C')
         pdf.cell(w_cas, 8, "Casetas", border=1, fill=True, align='C')
         pdf.cell(w_fsc, 8, "FSC", border=1, fill=True, align='C')
-        pdf.cell(w_tot, 8, "Total", border=1, fill=True, align='C')
+        pdf.cell(w_tot, 8, f"Total {moneda_tag}", border=1, fill=True, align='C')
         pdf.ln()
         
         pdf.set_font("Arial", "", 8)
@@ -401,30 +401,29 @@ with tab_cot:
             "Flete": flete_neto_mxn, "Casetas": casetas, "FSC": total_fsc_mxn, "Total MXN": total_mxn_neto
         }]
 
+        # --- CONVERSIÓN DE MONEDA PARA EL PDF ---
+        f_conv = (1/tc) if moneda_neg == "USD (Dólares)" else 1
+
         for r in rutas_pdf:
             pdf.cell(w_orig, 8, r["Origen"][:20], border=1, align='C')
             pdf.cell(w_dest, 8, r["Destino"][:20], border=1, align='C')
             pdf.cell(w_serv, 8, r.get("Servicio", tipo_op)[:10], border=1, align='C')
             pdf.cell(w_kms, 8, str(r["KM"]), border=1, align='C')
-            pdf.cell(w_flete, 8, f"${r['Flete']:,.2f}", border=1, align='C')
-            pdf.cell(w_cas, 8, f"${r['Casetas']:,.2f}", border=1, align='C')
-            pdf.cell(w_fsc, 8, f"${r['FSC']:,.2f}", border=1, align='C')
-            pdf.cell(w_tot, 8, f"${r['Total MXN']:,.2f}", border=1, align='C')
+            pdf.cell(w_flete, 8, f"${(r['Flete'] * f_conv):,.2f}", border=1, align='C')
+            pdf.cell(w_cas, 8, f"${(r['Casetas'] * f_conv):,.2f}", border=1, align='C')
+            pdf.cell(w_fsc, 8, f"${(r['FSC'] * f_conv):,.2f}", border=1, align='C')
+            pdf.cell(w_tot, 8, f"${(r['Total MXN'] * f_conv):,.2f}", border=1, align='C')
             pdf.ln(8)
             
-        if len(rutas_pdf) > 1:
+        if total_cpac > 0 or detalle_accesorios:
             pdf.ln(2)
             pdf.set_font("Arial", "B", 8)
-            pdf.cell(0, 5, f"GRAN TOTAL PROPUESTA: ${gran_total_mxn:,.2f} MXN", ln=True, align='R')
-        
-        if total_cpac > 0 or detalle_accesorios:
-            pdf.set_font("Arial", "B", 8)
-            pdf.cell(0, 5, "Cargos Adicionales Cotizados:", ln=True)
+            pdf.cell(0, 5, f"Cargos Adicionales Cotizados ({moneda_tag}):", ln=True)
             pdf.set_font("Arial", "", 8)
             if total_cpac > 0:
-                pdf.cell(0, 5, f"  - CPAC Operativo: ${total_cpac:,.2f}", ln=True)
+                pdf.cell(0, 5, f"  - CPAC Operativo: ${(total_cpac * f_conv):,.2f}", ln=True)
             for acc, datos in detalle_accesorios.items():
-                pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${datos['subtotal']:,.2f}", ln=True)
+                pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${(datos['subtotal'] * f_conv):,.2f}", ln=True)
             pdf.ln(2)
 
         pdf.ln(3)
