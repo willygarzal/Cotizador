@@ -422,7 +422,7 @@ with tab_hist:
 
 # --- PESTAÑA 4: CONFIGURACIÓN ABC (EL CUARTO DE MÁQUINAS) ---
 with tab_config:
-    st.markdown("## ⚙️ Configuración de Costeo Operativo (ABC)")
+    st.markdown("## ⚙️ Configuración de Costeo Operativo ")
     st.info("Estos parámetros controlan el 'Cerebro Financiero' del cotizador. Las modificaciones se aplican en tiempo real.")
     
     col_c1, col_c2 = st.columns(2)
