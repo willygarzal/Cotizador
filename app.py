@@ -28,7 +28,7 @@ if 'km_editado' not in st.session_state:
 
 default_params = {
     "w_llantas": 0.624, "w_mtto": 1.092, "w_admin": 4.16, "w_operador": 1.8928, "w_carga_soc": 35.0,
-    "gasto_op_largo": 230.0, "gasto_op_corto": 88.0,
+    "gasto_op_largo": 247.0, "gasto_op_corto": 88.0,
     "w_seguro": 5000.0, "w_gps_tracto": 1228.74, "w_gps_caja": 215.25, 
     "w_dep_tracto": 20628.08, "w_dep_caja": 3062.50,
     "km_mes_tracto_largo": 18500.0, "km_mes_tracto_corto": 13500.0,
