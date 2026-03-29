@@ -84,7 +84,7 @@ with st.sidebar:
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
     telefono_wa = st.text_input("WhatsApp Cliente", "")
 
-    mult_peaje = 2.15
+    mult_peaje = 2.18
 
 # --- CÁLCULO DINÁMICO DE DEPRECIACIÓN MENSUAL ---
 w_dep_tracto_calc = (st.session_state.valor_tractor - st.session_state.residual_tractor) / (st.session_state.vida_tractor * 12) if st.session_state.vida_tractor > 0 else 0
