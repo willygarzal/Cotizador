@@ -23,10 +23,10 @@ if 'rutas_propuesta' not in st.session_state:
     st.session_state.rutas_propuesta = []
 if 'ruta_previa' not in st.session_state:
     st.session_state.ruta_previa = ""
-if 'km_input' not in st.session_state:
-    st.session_state.km_input = 0.0
-if 'casetas_input' not in st.session_state:
-    st.session_state.casetas_input = 0.0
+if 'km_input_key' not in st.session_state:
+    st.session_state.km_input_key = 0.0
+if 'casetas_input_key' not in st.session_state:
+    st.session_state.casetas_input_key = 0.0
 if 'redonda_previa' not in st.session_state:
     st.session_state.redonda_previa = False
 
@@ -35,8 +35,9 @@ default_params = {
     "w_llantas_corto": 0.60, "w_mtto_corto": 1.05, "gasto_op_corto": 88.0,
     "w_admin": 4.16, "w_operador": 1.8928, "w_carga_soc": 35.0,
     "w_seguro": 5000.0, "w_gps_tracto": 1228.74, "w_gps_caja": 215.25, 
-    "w_dep_tracto": 20628.08, "w_dep_caja": 3062.50,
-    "valor_tractor": 2500000.0, "valor_caja": 800000.0,
+    # Nuevas variables de Activos (Depreciación Dinámica)
+    "valor_tractor": 2887931.03, "residual_tractor": 1155172.41, "vida_tractor": 7,
+    "valor_caja": 612500.00, "residual_caja": 245000.00, "vida_caja": 10,
     "km_mes_tracto_largo": 18500.0, "km_mes_tracto_corto": 13500.0,
     "km_mes_caja_largo": 8000.0, "km_mes_caja_corto": 1500.0,
     "margen_cruce": 5.0, "margen_accesorios": 20.0
@@ -47,19 +48,11 @@ for k, v in default_params.items():
 
 # --- DICCIONARIOS DE COSTOS ACCESORIOS ---
 precios_accesorios = {
-    "FIANZA": 330.00,
-    "CARGA / DESCARGA EN VIVO": 500.00,
-    "DEMORAS": 935.00,
-    "CRUCE": 2341.75,
-    "POSICIONAMIENTO": 1190.00,
-    "LAVADO DE CAJA": 170.00,
-    "FUMIGACION": 552.50,
-    "BASCULA": 935.00,
-    "EQUIPO DE SUJECION": 595.00,
-    "SELLOS DE SEGURIDAD": 130.00,
-    "HORA ADICIONAL MANIOBRA": 435.00,
-    "DEMORAS CAJA EN PLANTA (4to DÍA)": 1045.00,
-    "PARADAS ADICIONALES/DESVIACIONES": 2610.00,
+    "FIANZA": 330.00, "CARGA / DESCARGA EN VIVO": 500.00, "DEMORAS": 935.00,
+    "CRUCE": 2341.75, "POSICIONAMIENTO": 1190.00, "LAVADO DE CAJA": 170.00,
+    "FUMIGACION": 552.50, "BASCULA": 935.00, "EQUIPO DE SUJECION": 595.00,
+    "SELLOS DE SEGURIDAD": 130.00, "HORA ADICIONAL MANIOBRA": 435.00,
+    "DEMORAS CAJA EN PLANTA (4to DÍA)": 1045.00, "PARADAS ADICIONALES/DESVIACIONES": 2610.00,
     "MOVIMIENTO EN FALSO": 2610.00
 }
 
@@ -94,8 +87,9 @@ with st.sidebar:
 
     mult_peaje = 2.5
 
-# --- 3. ÁREA PRINCIPAL CON 4 PESTAÑAS ---
-tab_cot, tab_rx, tab_hist, tab_config = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial", "⚙️ Configuración Costeo"])
+# --- CÁLCULO DINÁMICO DE DEPRECIACIÓN MENSUAL ---
+w_dep_tracto_calc = (st.session_state.valor_tractor - st.session_state.residual_tractor) / (st.session_state.vida_tractor * 12) if st.session_state.vida_tractor > 0 else 0
+w_dep_caja_calc = (st.session_state.valor_caja - st.session_state.residual_caja) / (st.session_state.vida_caja * 12) if st.session_state.vida_caja > 0 else 0
 
 w_admin = st.session_state.w_admin
 w_operador = st.session_state.w_operador
@@ -103,8 +97,9 @@ w_carga_soc = st.session_state.w_carga_soc
 w_seguro = st.session_state.w_seguro
 w_gps_tracto = st.session_state.w_gps_tracto
 w_gps_caja = st.session_state.w_gps_caja
-w_dep_tracto = st.session_state.w_dep_tracto
-w_dep_caja = st.session_state.w_dep_caja
+
+# --- 3. ÁREA PRINCIPAL CON 4 PESTAÑAS ---
+tab_cot, tab_rx, tab_hist, tab_config = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial", "⚙️ Configuración Costeo"])
 
 # --- PESTAÑA 1: COTIZADOR ---
 with tab_cot:
@@ -126,7 +121,7 @@ with tab_cot:
         
         ruta_actual = f"{orig}-{dest}"
         
-        # 1. LLAMADA A LA API (Solo si cambia Origen o Destino)
+        # 1. LLAMADA A LA API (Solo se dispara la primera vez que se ingresa una ruta nueva)
         if orig and dest and ruta_actual != st.session_state.ruta_previa:
             try:
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
@@ -155,26 +150,25 @@ with tab_cot:
                     res_basico = gmaps.directions(orig, dest)
                     if res_basico: dist_api = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
                 
-                # Guardamos los resultados en el estado para que no se sobreescriban
-                st.session_state.km_input = dist_api
-                st.session_state.casetas_input = peaje_api
+                st.session_state.km_input_key = dist_api
+                st.session_state.casetas_input_key = peaje_api
                 st.session_state.ruta_previa = ruta_actual
                 st.session_state.redonda_previa = False # Reset toggle
                 
             except Exception as e:
                 st.info("Calculando ruta avanzada...")
 
-        # 2. LÓGICA DE RUTA REDONDA (Multiplica el estado actual, sea API o manual)
+        # 2. LÓGICA DE RUTA REDONDA (Multiplica el estado actual respetando inputs manuales)
         if es_ruta_redonda != st.session_state.redonda_previa:
             if es_ruta_redonda:
-                st.session_state.km_input *= 2
-                st.session_state.casetas_input *= 2
+                st.session_state.km_input_key *= 2
+                st.session_state.casetas_input_key *= 2
             else:
-                st.session_state.km_input /= 2
-                st.session_state.casetas_input /= 2
+                st.session_state.km_input_key /= 2
+                st.session_state.casetas_input_key /= 2
             st.session_state.redonda_previa = es_ruta_redonda
 
-        km_final = st.number_input("KMS Totales (Editar si es necesario)", key="km_input", format="%.2f", step=1.0)
+        km_final = st.number_input("KMS Totales (Editar si es necesario)", key="km_input_key", format="%.2f", step=1.0)
 
         # --- MOTOR FINANCIERO: REGLA DE TRAMOS Y DOBLE OPERADOR ---
         if tipo_ruta_manual == "Forzar Tramo Corto" or tipo_ruta_manual == "Mov. Local/Patio":
@@ -210,7 +204,7 @@ with tab_cot:
             w_km_mes_caja_calc = w_km_mes_caja if w_km_mes_caja > 0 else 1
             
             costo_seg_gps_viaje = km_final * ((w_seguro + w_gps_tracto) / w_km_mes_tracto_calc) + (km_final * (w_gps_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0)
-            costo_deprec_viaje = km_final * (w_dep_tracto / w_km_mes_tracto_calc) + (km_final * (w_dep_caja / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0)
+            costo_deprec_viaje = km_final * (w_dep_tracto_calc / w_km_mes_tracto_calc) + (km_final * (w_dep_caja_calc / w_km_mes_caja_calc) if tipo_equipo == "Caja Propia" else 0)
                 
             costo_piso_total = costo_operador + costo_llantas_mtto + costo_admin_viaje + costo_seg_gps_viaje + costo_deprec_viaje
             cpk_piso_flete = costo_piso_total / km_final
@@ -223,7 +217,7 @@ with tab_cot:
         with st.container(border=True):
             st.markdown("**Cargos Fijos de Ruta**")
             col_f1, col_f2 = st.columns(2)
-            casetas = col_f1.number_input("Casetas Grales. API ($)", key="casetas_input", format="%.2f")
+            casetas = col_f1.number_input("Casetas Grales. API ($)", key="casetas_input_key", format="%.2f")
             factor_ajuste_comb = col_f2.number_input("Ajuste Combustible ($/km)", 0.0, format="%.2f")
             total_ajuste_comb = km_final * factor_ajuste_comb
             if total_ajuste_comb > 0: st.caption(f"Total Ajuste Combustible: **${total_ajuste_comb:,.2f}**")
@@ -271,7 +265,6 @@ with tab_cot:
         st.markdown("---")
         c_cpk, c_ipk = st.columns(2)
         with c_cpk:
-            # El Margen Objetivo solo aplica a los Costos del Flete (Aislamos los accesorios)
             costos_puros_flete = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb
             margen_decimal = margen_objetivo / 100.0
             
@@ -304,7 +297,7 @@ with tab_cot:
     # --- CÁLCULO FINAL DE UTILIDAD Y KPIs CON COSTOS REALES ---
     egreso_total_viaje = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb + total_accesorios_costo
     utilidad_neta_viaje_actual = total_mxn_neto - egreso_total_viaje
-    ebitda_viaje_actual = utilidad_neta_viaje_actual + costo_deprec_viaje # Se suma la depre porque no es salida de efectivo
+    ebitda_viaje_actual = utilidad_neta_viaje_actual + costo_deprec_viaje 
     
     margen_neto_real = (utilidad_neta_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0.0
 
@@ -323,7 +316,7 @@ with tab_cot:
             delta_color=color_delta
         )
 
-    # --- SISTEMA MULTIRUTA ---
+    # --- SISTEMA MULTIRUTA Y ACCIONES FINALES ---
     st.markdown("---")
     col_btn_add, col_btn_clear = st.columns([3, 1])
     with col_btn_add:
@@ -333,6 +326,8 @@ with tab_cot:
                     "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
                     "Flete": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
                     "Extras": total_extras_venta_mxn - casetas, "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
+                    "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
+                    "Ajuste_Comb": total_ajuste_comb, "Accesorios_Venta": total_accesorios_venta, "Accesorios_Costo": total_accesorios_costo,
                     "EBITDA": ebitda_viaje_actual, "Utilidad_Neta": utilidad_neta_viaje_actual
                 })
                 st.toast(f"✅ Tramo añadido a la propuesta")
@@ -347,6 +342,106 @@ with tab_cot:
         st.dataframe(df_prop[["Origen", "Destino", "KM", "Flete", "FSC", "Casetas", "Extras", "Total MXN"]].style.format("${:,.2f}", subset=["Flete", "FSC", "Casetas", "Extras", "Total MXN"]), use_container_width=True)
         gran_total_mxn = df_prop["Total MXN"].sum()
 
+    st.markdown("---")
+    st.subheader("🚀 Acciones")
+    a1, a2, a3 = st.columns(3)
+    fecha_texto = f"{['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][datetime.now().month - 1]} {datetime.now().day}, {datetime.now().year}"
+
+    with a1:
+        if st.button("💾 Guardar Historial", use_container_width=True, type="primary"):
+            nombres_accesorios = ", ".join(detalle_accesorios.keys()) if detalle_accesorios else "Ninguno"
+            rutas_a_guardar = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{
+                "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
+                "Flete Neto": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
+                "Ajuste_Comb": total_ajuste_comb, "Accesorios_Venta": total_accesorios_venta, "Accesorios_Costo": total_accesorios_costo,
+                "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
+                "EBITDA": ebitda_viaje_actual, "Utilidad_Neta": utilidad_neta_viaje_actual
+            }]
+            for r in rutas_a_guardar:
+                moneda_ruta = r.get("Moneda", moneda_tag)
+                f_conv = (1/tc) if moneda_ruta == "USD (Dólares)" else 1
+                ingreso_total_mxn = r.get("Total MXN", total_mxn_neto)
+                utilidad_neta_mxn = r.get("Utilidad_Neta", 0)
+                margen_neto_pct = (utilidad_neta_mxn / ingreso_total_mxn) * 100 if ingreso_total_mxn > 0 else 0
+                
+                st.session_state.historial.insert(0, {
+                    "Fecha": datetime.now().strftime("%d/%m %H:%M"), "Empresa Cliente": empresa_cliente, "Contacto Cliente": atencion_cliente,
+                    "Ruta": f"{r['Origen']}-{r['Destino']}", "KMS": r["KM"], "Servicio": r.get("Servicio", tipo_op), "Equipo": tipo_equipo,
+                    "Moneda": moneda_ruta, "TC": tc, 
+                    "Flete Cotizado": round(r.get("Flete", r.get("Flete Neto", flete_neto_mxn)) * f_conv, 2),
+                    "FSC Cotizado": round(r["FSC"] * f_conv, 2), "Casetas Cotizadas": round(r["Casetas"] * f_conv, 2), 
+                    "Ajuste Combustible": round(r.get("Ajuste_Comb", total_ajuste_comb) * f_conv, 2),
+                    "Accesorios (Venta)": round(r.get("Accesorios_Venta", total_accesorios_venta) * f_conv, 2),
+                    "Total MXN": round(ingreso_total_mxn, 2), "Total USD": round(r.get("Total USD", total_usd_neto), 2), 
+                    "Margen Neto %": round(margen_neto_pct, 1),
+                    "EBITDA": round(r.get("EBITDA", 0) * f_conv, 2),
+                    "Utilidad Neta": round(utilidad_neta_mxn * f_conv, 2)
+                })
+            st.toast("✅ Sábana Financiera Guardada en Historial")
+
+    with a2:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 20); pdf.set_text_color(0, 51, 102); pdf.cell(0, 10, empresa_remitente, ln=True, align='L')
+        pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "B", 14); pdf.cell(0, 8, "COTIZACIÓN", ln=True, align='R')
+        pdf.set_font("Arial", "", 10); pdf.cell(0, 5, f"{lugar_expedicion} {fecha_texto}", ln=True, align='R'); pdf.ln(5)
+        pdf.set_font("Arial", "B", 10); pdf.cell(0, 5, f"Para. {empresa_cliente}", ln=True); pdf.cell(0, 5, f"Atención. {atencion_cliente}", ln=True); pdf.ln(5)
+        pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 5, "Por medio de la presente cotización, informo a usted las tarifas que actualmente manejamos en las siguientes rutas y/o servicios:"); pdf.ln(4)
+        
+        pdf.set_font("Arial", "B", 8); pdf.set_fill_color(220, 220, 220)
+        w_pdf = [35, 35, 20, 15, 20, 20, 20, 25]
+        for h in ["Origen", "Destino", "Servicio", "KMS", "Flete", "Casetas", "FSC", f"Total {moneda_tag}"]: pdf.cell(w_pdf[["Origen", "Destino", "Servicio", "KMS", "Flete", "Casetas", "FSC", f"Total {moneda_tag}"].index(h)], 8, h, 1, 0, 'C', True)
+        pdf.ln()
+        
+        pdf.set_font("Arial", "", 8)
+        rutas_pdf = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{"Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final, "Flete": flete_neto_mxn, "Casetas": casetas, "FSC": total_fsc_mxn, "Total MXN": total_mxn_neto}]
+        f_conv = (1/tc) if moneda_neg == "USD (Dólares)" else 1
+
+        for r in rutas_pdf:
+            pdf.cell(35, 8, r["Origen"][:20], 1, 0, 'C'); pdf.cell(35, 8, r["Destino"][:20], 1, 0, 'C')
+            pdf.cell(20, 8, r.get("Servicio", tipo_op)[:10], 1, 0, 'C'); pdf.cell(15, 8, str(r["KM"]), 1, 0, 'C')
+            pdf.cell(20, 8, f"${(r['Flete'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(20, 8, f"${(r['Casetas'] * f_conv):,.2f}", 1, 0, 'C')
+            pdf.cell(20, 8, f"${(r['FSC'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(25, 8, f"${(r['Total MXN'] * f_conv):,.2f}", 1, 1, 'C')
+            
+        if total_ajuste_comb > 0 or detalle_accesorios:
+            pdf.ln(2); pdf.set_font("Arial", "B", 8); pdf.cell(0, 5, f"Cargos Adicionales ({moneda_tag}):", ln=True); pdf.set_font("Arial", "", 8)
+            if total_ajuste_comb > 0: pdf.cell(0, 5, f"  - Ajuste de Combustible: ${(total_ajuste_comb * f_conv):,.2f}", ln=True)
+            for acc, datos in detalle_accesorios.items(): pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${(datos['venta'] * f_conv):,.2f}", ln=True)
+        
+        pdf.ln(3); pdf.set_font("Arial", "B", 9); pdf.cell(0, 5, "Caja Regular", ln=True); pdf.cell(0, 5, "No materiales peligrosos", ln=True); pdf.ln(2)
+        pdf.set_font("Arial", "", 8)
+        clausulas_str = (
+            "Propuesta vigente por 30 dias para su aceptacion, posteriormente sera valida por 12 meses. Sujeto a disponibilidad de equipo.\n\n"
+            "EL COSTO POR VARIACION DE DIESEL (FSC) SE ACTUALIZARA DE ACUERDO AL COMPORTAMIENTO DE LOS PRECIOS EN COMBUSTIBLES.\n\n"
+            "Las tarifas presentadas, son calculadas de acuerdo con la asignacion conjunta de los volumenes por viajes domesticos, de importacion o exportacion.\n\n"
+            "- Maximo 22 toneladas.\n- Libre de maniobras de carga y descarga.\n- La mercancia viaja asegurada por cuenta y riesgo del cliente.\n"
+            "- El cliente es responsable por el cuidado de nuestros remolques (daños y robo) tanto con sus proveedores o clientes, como en sus instalaciones.\n"
+            "- Paradas adicionales, dentro del recorrido natural de la ruta $2,610.00 MXN, en desviaciones, cargo por kilometraje recorrido.\n"
+            "- Servicios cancelados, tienen costo de $2,610.00 MXN por movimiento en falso.\n"
+            "- Si no cuentan con sellos de seguridad y requieren que los provea H GT, el costo es de $130.00 MXN cada uno.\n"
+            "- Maximo tres horas para maniobras de carga y tres para descarga, la hora adicional se factura a $435.00 MXN.\n"
+            "- Cajas en plantas maximo tres dias para salir cargadas o vacias, a partir del 4to. dia, generan cargos por concepto de demoras $1,045.00 MXN por caja por dia.\n"
+            "- Cruces en fines de semana y/o dias festivos tienen un costo del 30% adicional.\n"
+            "- La variacion se actualiza mensualmente.\n- Equipo de sujecion se cobra por aparte.\n- Terminos de pago, 15 dias de credito.\n\n"
+            "Para mejor servicio, por favor programe con anticipacion sus requerimientos.\nImportes en Moneda Nacional antes de Impuestos. Sujeto a lo dispuesto en la Ley del Impuesto al Valor Agregado."
+        )
+        pdf.multi_cell(0, 4, clausulas_str); pdf.ln(5); pdf.cell(0, 5, "Esperando recibir su preferencia, quedo a sus ordenes.", ln=True); pdf.ln(8)
+        pdf.set_font("Arial", "B", 9); pdf.cell(95, 5, "Atentamente", align='C'); pdf.cell(95, 5, "Acepto Tarifas y Condiciones", align='C', ln=True); pdf.ln(12)
+        pdf.cell(95, 5, "___________________________________", align='C'); pdf.cell(95, 5, "___________________________________", align='C', ln=True)
+        pdf.set_font("Arial", "", 9); pdf.cell(95, 5, nombre_remitente, align='C'); pdf.cell(95, 5, atencion_cliente, align='C', ln=True)
+        pdf.cell(95, 5, empresa_remitente, align='C'); pdf.cell(95, 5, empresa_cliente, align='C', ln=True)
+
+        try: st.download_button("📄 Descargar PDF", pdf.output(dest='S').encode('latin-1'), f"Cotizacion_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
+        except Exception as e: pass
+
+    with a3:
+        wa_text = f"*{empresa_remitente} - COTIZACIÓN*\n\n*Fecha:* {fecha_texto}\n*Para:* {empresa_cliente}\n\n"
+        rutas_wa = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{"Origen": orig, "Destino": dest, "KM": km_final, "Total MXN": total_mxn_neto}]
+        for r in rutas_wa: wa_text += f"📍 {r['Origen']} a {r['Destino']} ({r['KM']} KMS)\n"
+        if total_ajuste_comb > 0: wa_text += f"• *Ajuste de Combustible:* ${total_ajuste_comb:,.2f}\n"
+        wa_text += f"\n💰 *TOTAL:* ${gran_total_mxn:,.2f} {moneda_tag}\n\n*Acepto Tarifas y Condiciones*"
+        st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; width:100%; padding:10px; border-radius:5px; border:none; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
+
 # --- PESTAÑA 2: TABLERO FINANCIERO DIRECTIVO (RAYOS X) ---
 with tab_rx:
     st.markdown("## 📊 Radiografía Financiera ")
@@ -356,7 +451,6 @@ with tab_rx:
         margen_ebitda = (ebitda_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
         margen_neto = (utilidad_neta_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
 
-        # Implementación de Idea 9: El Nuevo Acomodo de Tarjetas
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Ingreso Total (Venta)", f"${total_mxn_neto:,.2f}")
         k2.metric("Egreso Total (Costo Real)", f"${egreso_total_viaje:,.2f}")
@@ -382,7 +476,10 @@ with tab_rx:
 # --- PESTAÑA 3: HISTORIAL Y AUDITORÍA ---
 with tab_hist:
     st.markdown("## 📜 Sábana Financiera de Auditoría")
-    st.info("Las funciones de guardado en el historial y generación de PDF siguen activas en la Pestaña 1.")
+    if st.session_state.historial: 
+        st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
+    else:
+        st.info("Aún no hay cotizaciones guardadas. Cuando guardes una, aparecerá aquí con el desglose de todos los costos.")
 
 # --- PESTAÑA 4: CONFIGURACIÓN ABC (EL CUARTO DE MÁQUINAS) ---
 with tab_config:
@@ -411,15 +508,22 @@ with tab_config:
 
     with col_c2:
         st.subheader("3. Costos Fijos y Equipos")
-        st.session_state.valor_tractor = st.number_input("Valor de Adquisición Tractor ($)", value=st.session_state.valor_tractor, step=50000.0)
-        st.session_state.valor_caja = st.number_input("Valor de Adquisición Caja ($)", value=st.session_state.valor_caja, step=10000.0)
+        st.markdown("**Depreciación Dinámica Tractor**")
+        st.session_state.valor_tractor = st.number_input("Valor Adquisición Tractor ($)", value=st.session_state.valor_tractor, step=50000.0)
+        st.session_state.residual_tractor = st.number_input("Valor Residual Tractor ($)", value=st.session_state.residual_tractor, step=10000.0)
+        st.session_state.vida_tractor = st.number_input("Vida Útil Tractor (Años)", value=st.session_state.vida_tractor, step=1)
+        st.caption(f"Depreciación Mensual Tractor: **${w_dep_tracto_calc:,.2f}**")
+        
+        st.markdown("**Depreciación Dinámica Caja**")
+        st.session_state.valor_caja = st.number_input("Valor Adquisición Caja ($)", value=st.session_state.valor_caja, step=10000.0)
+        st.session_state.residual_caja = st.number_input("Valor Residual Caja ($)", value=st.session_state.residual_caja, step=5000.0)
+        st.session_state.vida_caja = st.number_input("Vida Útil Caja (Años)", value=st.session_state.vida_caja, step=1)
+        st.caption(f"Depreciación Mensual Caja: **${w_dep_caja_calc:,.2f}**")
         
         st.markdown("---")
         st.session_state.w_seguro = st.number_input("Seguro Tractor ($/mes)", value=st.session_state.w_seguro, step=100.0)
         st.session_state.w_gps_tracto = st.number_input("GPS Tractor ($/mes)", value=st.session_state.w_gps_tracto, step=10.0)
         st.session_state.w_gps_caja = st.number_input("GPS Caja ($/mes)", value=st.session_state.w_gps_caja, step=10.0)
-        st.session_state.w_dep_tracto = st.number_input("Depreciación Fija Tractor ($/mes)", value=st.session_state.w_dep_tracto, step=100.0)
-        st.session_state.w_dep_caja = st.number_input("Depreciación Fija Caja ($/mes)", value=st.session_state.w_dep_caja, step=10.0)
 
     with col_c3:
         st.subheader("4. Metas de Kilometraje")
