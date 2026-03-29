@@ -35,7 +35,6 @@ default_params = {
     "w_llantas_corto": 0.60, "w_mtto_corto": 1.05, "gasto_op_corto": 88.0,
     "w_admin": 4.16, "w_operador": 1.8928, "w_carga_soc": 35.0,
     "w_seguro": 5000.0, "w_gps_tracto": 1228.74, "w_gps_caja": 215.25, 
-    # Nuevas variables de Activos (Depreciación Dinámica)
     "valor_tractor": 2887931.03, "residual_tractor": 1155172.41, "vida_tractor": 7,
     "valor_caja": 612500.00, "residual_caja": 245000.00, "vida_caja": 10,
     "km_mes_tracto_largo": 18500.0, "km_mes_tracto_corto": 13500.0,
@@ -121,7 +120,6 @@ with tab_cot:
         
         ruta_actual = f"{orig}-{dest}"
         
-        # 1. LLAMADA A LA API (Solo se dispara la primera vez que se ingresa una ruta nueva)
         if orig and dest and ruta_actual != st.session_state.ruta_previa:
             try:
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
@@ -153,12 +151,11 @@ with tab_cot:
                 st.session_state.km_input_key = dist_api
                 st.session_state.casetas_input_key = peaje_api
                 st.session_state.ruta_previa = ruta_actual
-                st.session_state.redonda_previa = False # Reset toggle
+                st.session_state.redonda_previa = False 
                 
             except Exception as e:
                 st.info("Calculando ruta avanzada...")
 
-        # 2. LÓGICA DE RUTA REDONDA (Multiplica el estado actual respetando inputs manuales)
         if es_ruta_redonda != st.session_state.redonda_previa:
             if es_ruta_redonda:
                 st.session_state.km_input_key *= 2
@@ -170,7 +167,6 @@ with tab_cot:
 
         km_final = st.number_input("KMS Totales (Editar si es necesario)", key="km_input_key", format="%.2f", step=1.0)
 
-        # --- MOTOR FINANCIERO: REGLA DE TRAMOS Y DOBLE OPERADOR ---
         if tipo_ruta_manual == "Forzar Tramo Corto" or tipo_ruta_manual == "Mov. Local/Patio":
             es_largo = False
         elif tipo_ruta_manual == "Forzar Tramo Largo":
@@ -211,7 +207,6 @@ with tab_cot:
             
             st.success(f"⚖️ **Costo Piso Flete:** ${cpk_piso_flete:.2f} MXN por km | TRAMO: {'Largo (>350km)' if es_largo else 'Corto (<=350km)'}")
 
-    # --- LECTURA DE CASETAS Y ACCESORIOS (INYECCIÓN DE MÁRGENES) ---
     with col_extras:
         st.subheader("💰 Cargos Extra y Accesorios")
         with st.container(border=True):
@@ -250,7 +245,8 @@ with tab_cot:
             st.markdown("**Accesorio Especial / Maniobra Libre**")
             col_p1, col_p2 = st.columns([2, 1])
             desc_personalizado = col_p1.text_input("Descripción del cargo")
-            monto_personalizado = col_p2.number_input("Monto Costo ($)", min_value=0.0, step=100.0)
+            # AQUI ESTA EL CAMBIO DEL TITULO CORTO
+            monto_personalizado = col_p2.number_input("Costo ($)", min_value=0.0, step=100.0)
             if desc_personalizado and monto_personalizado > 0:
                 subtotal_costo = monto_personalizado
                 subtotal_venta = subtotal_costo * (1 + (st.session_state.margen_accesorios / 100.0))
@@ -260,7 +256,6 @@ with tab_cot:
 
             total_extras_venta_mxn = casetas + total_ajuste_comb + total_accesorios_venta
 
-    # --- PARTE 2 DE LA COLUMNA RUTA (Cálculo del IPK Puro Flete) ---
     with col_ruta:
         st.markdown("---")
         c_cpk, c_ipk = st.columns(2)
@@ -294,7 +289,6 @@ with tab_cot:
         st.markdown("---")
         st.info(f"⛽ **FSC Proyectado:** Factor ${factor_calculado:.2f} (Rend. Base: {rendimiento_base}) = **${total_fsc_mxn:,.2f} MXN**")
 
-    # --- CÁLCULO FINAL DE UTILIDAD Y KPIs CON COSTOS REALES ---
     egreso_total_viaje = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb + total_accesorios_costo
     utilidad_neta_viaje_actual = total_mxn_neto - egreso_total_viaje
     ebitda_viaje_actual = utilidad_neta_viaje_actual + costo_deprec_viaje 
@@ -316,7 +310,6 @@ with tab_cot:
             delta_color=color_delta
         )
 
-    # --- SISTEMA MULTIRUTA Y ACCIONES FINALES ---
     st.markdown("---")
     col_btn_add, col_btn_clear = st.columns([3, 1])
     with col_btn_add:
@@ -399,7 +392,8 @@ with tab_cot:
 
         for r in rutas_pdf:
             pdf.cell(35, 8, r["Origen"][:20], 1, 0, 'C'); pdf.cell(35, 8, r["Destino"][:20], 1, 0, 'C')
-            pdf.cell(20, 8, r.get("Servicio", tipo_op)[:10], 1, 0, 'C'); pdf.cell(15, 8, str(r["KM"]), 1, 0, 'C')
+            # AQUI ESTA EL CAMBIO A 12 CARACTERES PARA IMPORTACION/EXPORTACION
+            pdf.cell(20, 8, r.get("Servicio", tipo_op)[:12], 1, 0, 'C'); pdf.cell(15, 8, str(r["KM"]), 1, 0, 'C')
             pdf.cell(20, 8, f"${(r['Flete'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(20, 8, f"${(r['Casetas'] * f_conv):,.2f}", 1, 0, 'C')
             pdf.cell(20, 8, f"${(r['FSC'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(25, 8, f"${(r['Total MXN'] * f_conv):,.2f}", 1, 1, 'C')
             
