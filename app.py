@@ -120,41 +120,44 @@ with tab_cot:
         
         ruta_actual = f"{orig}-{dest}"
         
-        if orig and dest and ruta_actual != st.session_state.ruta_previa:
-            try:
-                m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
-                st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
-                
-                dist_api = 0.0
-                peaje_api = 0.0
-                
-                routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
-                headers = {"Content-Type": "application/json", "X-Goog-Api-Key": api_key, "X-Goog-FieldMask": "routes.distanceMeters,routes.travelAdvisory.tollInfo"}
-                payload = {"origin": {"address": orig}, "destination": {"address": dest}, "travelMode": "DRIVE", "extraComputations": ["TOLLS"]}
-                resp = requests.post(routes_url, json=payload, headers=headers)
-                
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if "routes" in data and len(data["routes"]) > 0:
-                        ruta_data = data["routes"][0]
-                        if "distanceMeters" in ruta_data: dist_api = round(ruta_data["distanceMeters"] / 1000.0, 1)
-                        if "travelAdvisory" in ruta_data and "tollInfo" in ruta_data["travelAdvisory"]:
-                            peajes = ruta_data["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
-                            for peaje in peajes:
-                                if peaje.get("currencyCode") == "MXN":
-                                    costo_auto = float(peaje.get("units", "0")) + (float(peaje.get("nanos", 0)) / 1e9)
-                                    peaje_api += costo_auto * mult_peaje
-                else:
-                    res_basico = gmaps.directions(orig, dest)
-                    if res_basico: dist_api = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
-                
-                st.session_state.km_input_key = dist_api
-                st.session_state.casetas_input_key = peaje_api
-                st.session_state.ruta_previa = ruta_actual
-                st.session_state.redonda_previa = False 
-                
-            except Exception as e:
-                st.info("Calculando ruta avanzada...")
+        # MAPA SIEMPRE VISIBLE
+        if orig and dest:
+            m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
+            st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
+            
+            # CONSULTA A LA API (Protegida)
+            if ruta_actual != st.session_state.ruta_previa:
+                try:
+                    dist_api = 0.0
+                    peaje_api = 0.0
+                    
+                    routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+                    headers = {"Content-Type": "application/json", "X-Goog-Api-Key": api_key, "X-Goog-FieldMask": "routes.distanceMeters,routes.travelAdvisory.tollInfo"}
+                    payload = {"origin": {"address": orig}, "destination": {"address": dest}, "travelMode": "DRIVE", "extraComputations": ["TOLLS"]}
+                    resp = requests.post(routes_url, json=payload, headers=headers)
+                    
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if "routes" in data and len(data["routes"]) > 0:
+                            ruta_data = data["routes"][0]
+                            if "distanceMeters" in ruta_data: dist_api = round(ruta_data["distanceMeters"] / 1000.0, 1)
+                            if "travelAdvisory" in ruta_data and "tollInfo" in ruta_data["travelAdvisory"]:
+                                peajes = ruta_data["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
+                                for peaje in peajes:
+                                    if peaje.get("currencyCode") == "MXN":
+                                        costo_auto = float(peaje.get("units", "0")) + (float(peaje.get("nanos", 0)) / 1e9)
+                                        peaje_api += costo_auto * mult_peaje
+                    else:
+                        res_basico = gmaps.directions(orig, dest)
+                        if res_basico: dist_api = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
+                    
+                    st.session_state.km_input_key = dist_api
+                    st.session_state.casetas_input_key = peaje_api
+                    st.session_state.ruta_previa = ruta_actual
+                    st.session_state.redonda_previa = False 
+                    
+                except Exception as e:
+                    st.info("Calculando ruta avanzada...")
 
         if es_ruta_redonda != st.session_state.redonda_previa:
             if es_ruta_redonda:
@@ -245,7 +248,7 @@ with tab_cot:
             st.markdown("**Accesorio Especial / Maniobra Libre**")
             col_p1, col_p2 = st.columns([2, 1])
             desc_personalizado = col_p1.text_input("Descripción del cargo")
-            # AQUI ESTA EL CAMBIO DEL TITULO CORTO
+            # TITULO CORTO APLICADO
             monto_personalizado = col_p2.number_input("Costo ($)", min_value=0.0, step=100.0)
             if desc_personalizado and monto_personalizado > 0:
                 subtotal_costo = monto_personalizado
@@ -392,7 +395,7 @@ with tab_cot:
 
         for r in rutas_pdf:
             pdf.cell(35, 8, r["Origen"][:20], 1, 0, 'C'); pdf.cell(35, 8, r["Destino"][:20], 1, 0, 'C')
-            # AQUI ESTA EL CAMBIO A 12 CARACTERES PARA IMPORTACION/EXPORTACION
+            # 12 CARACTERES PARA IMPORTACION/EXPORTACION
             pdf.cell(20, 8, r.get("Servicio", tipo_op)[:12], 1, 0, 'C'); pdf.cell(15, 8, str(r["KM"]), 1, 0, 'C')
             pdf.cell(20, 8, f"${(r['Flete'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(20, 8, f"${(r['Casetas'] * f_conv):,.2f}", 1, 0, 'C')
             pdf.cell(20, 8, f"${(r['FSC'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(25, 8, f"${(r['Total MXN'] * f_conv):,.2f}", 1, 1, 'C')
