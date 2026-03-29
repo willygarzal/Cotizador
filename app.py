@@ -27,12 +27,15 @@ if 'km_editado' not in st.session_state:
     st.session_state.km_editado = 0.0
 
 default_params = {
-    "w_llantas": 0.624, "w_mtto": 1.092, "w_admin": 4.16, "w_operador": 1.8928, "w_carga_soc": 35.0,
-    "gasto_op_largo": 247.0, "gasto_op_corto": 88.0,
+    "w_llantas_largo": 0.62, "w_mtto_largo": 1.09, "gasto_op_largo": 247.0,
+    "w_llantas_corto": 0.60, "w_mtto_corto": 1.05, "gasto_op_corto": 88.0,
+    "w_admin": 4.16, "w_operador": 1.8928, "w_carga_soc": 35.0,
     "w_seguro": 5000.0, "w_gps_tracto": 1228.74, "w_gps_caja": 215.25, 
     "w_dep_tracto": 20628.08, "w_dep_caja": 3062.50,
+    "valor_tractor": 2500000.0, "valor_caja": 800000.0,
     "km_mes_tracto_largo": 18500.0, "km_mes_tracto_corto": 13500.0,
-    "km_mes_caja_largo": 8000.0, "km_mes_caja_corto": 1500.0
+    "km_mes_caja_largo": 8000.0, "km_mes_caja_corto": 1500.0,
+    "margen_cruce": 5.0, "margen_accesorios": 20.0
 }
 for k, v in default_params.items():
     if k not in st.session_state:
@@ -92,8 +95,6 @@ with st.sidebar:
 tab_cot, tab_rx, tab_hist, tab_config = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial", "⚙️ Configuración Costeo"])
 
 # --- VARIABLES DEL CEREBRO ABC (CARGADAS DESDE MEMORIA) ---
-w_llantas = st.session_state.w_llantas
-w_mtto = st.session_state.w_mtto
 w_admin = st.session_state.w_admin
 w_operador = st.session_state.w_operador
 w_carga_soc = st.session_state.w_carga_soc
@@ -116,16 +117,24 @@ with tab_cot:
         orig = c1.text_input("Origen", "")
         dest = c2.text_input("Destino", "")
         
+        # --- NUEVOS CONTROLES DE RUTA ---
+        st.markdown("**Configuración del Viaje:**")
+        ctrl_1, ctrl_2, ctrl_3 = st.columns(3)
+        es_ruta_redonda = ctrl_1.checkbox("🔄 Ruta Redonda")
+        es_doble_operador = ctrl_2.checkbox("👥 Doble Operador")
+        tipo_ruta_manual = ctrl_3.selectbox("Tipo de Ruta", ["Automático", "Mov. Local/Patio", "Forzar Tramo Corto", "Forzar Tramo Largo"])
+        st.markdown("---")
+        
         distancia_real_km = 0.0
         costo_peaje_pesado = 0.0
-        ruta_actual = f"{orig}-{dest}"
+        ruta_actual = f"{orig}-{dest}-{es_ruta_redonda}" # Se añade la variable para forzar recálculo
         
         if orig and dest:
             try:
                 m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
                 st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
                 
-                # Candado de Kilómetros: Solo consulta la API si cambiaste el origen o destino
+                # Candado de Kilómetros: Solo consulta la API si cambiaste el origen, destino o si es redonda
                 if ruta_actual != st.session_state.ruta_previa:
                     routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
                     headers = {"Content-Type": "application/json", "X-Goog-Api-Key": api_key, "X-Goog-FieldMask": "routes.distanceMeters,routes.travelAdvisory.tollInfo"}
@@ -142,11 +151,16 @@ with tab_cot:
                                 for peaje in peajes:
                                     if peaje.get("currencyCode") == "MXN":
                                         costo_auto = float(peaje.get("units", "0")) + (float(peaje.get("nanos", 0)) / 1e9)
-                                        costo_peaje_pesado = costo_auto * mult_peaje
+                                        costo_peaje_pesado += costo_auto * mult_peaje
                     else:
                         res_basico = gmaps.directions(orig, dest)
                         if res_basico: distancia_real_km = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
                     
+                    # Aplicar lógica de Ruta Redonda a la distancia y peajes base obtenidos de la API
+                    if es_ruta_redonda:
+                        distancia_real_km *= 2
+                        costo_peaje_pesado *= 2
+
                     st.session_state.km_editado = float(distancia_real_km)
                     st.session_state.ruta_previa = ruta_actual
 
@@ -154,10 +168,13 @@ with tab_cot:
                 st.info("Calculando ruta avanzada...")
 
         # Casilla de KMS completamente libre para que la edites
-        km_final = st.number_input("KMS", value=float(st.session_state.km_editado), format="%.2f")
+        km_final = st.number_input("KMS Totales (Editar si es necesario)", value=float(st.session_state.km_editado), format="%.2f")
         st.session_state.km_editado = km_final
 
-        # --- MOTOR FINANCIERO: SEPARACIÓN EXACTA DE TRACTO Y CAJA ---
+        # --- MOTOR FINANCIERO: (TEMPORAL: Mantiene lógica anterior para evitar fallos antes de la Fase 3) ---
+        w_llantas = st.session_state.w_llantas_largo
+        w_mtto = st.session_state.w_mtto_largo
+        
         cpk_piso_flete = 0.0
         costo_operador = 0.0
         costo_llantas_mtto = 0.0
@@ -189,7 +206,7 @@ with tab_cot:
             
             st.success(f"⚖️ **Costo Operativo Base:** ${cpk_piso_flete:.2f} MXN por km | Modalidad: {tipo_equipo}")
 
-    # --- LECTURA DE CASETAS Y ACCESORIOS (ANTES DE CALCULAR LA VENTA) ---
+    # --- LECTURA DE CASETAS Y ACCESORIOS ---
     with col_extras:
         st.subheader("💰 Cargos Extra y Accesorios")
         with st.container(border=True):
@@ -215,21 +232,29 @@ with tab_cot:
                     subtotal = cant * costo
                     total_accesorios_mxn += subtotal
                     detalle_accesorios[acc] = {"cantidad": cant, "costo": costo, "subtotal": subtotal}
+            
+            # Campo para Accesorio Personalizado Libre
+            st.markdown("---")
+            st.markdown("**Accesorio Especial / Maniobra Libre**")
+            col_p1, col_p2 = st.columns([2, 1])
+            desc_personalizado = col_p1.text_input("Descripción del cargo")
+            monto_personalizado = col_p2.number_input("Monto ($)", min_value=0.0, step=100.0)
+            if desc_personalizado and monto_personalizado > 0:
+                total_accesorios_mxn += monto_personalizado
+                detalle_accesorios[desc_personalizado] = {"cantidad": 1.0, "costo": monto_personalizado, "subtotal": monto_personalizado}
 
             total_extras_mxn = casetas + total_ajuste_comb + total_accesorios_mxn
 
-    # --- PARTE 2 DE LA COLUMNA RUTA (Cálculo del IPK ya conociendo las Casetas) ---
+    # --- PARTE 2 DE LA COLUMNA RUTA (Cálculo del IPK) ---
     with col_ruta:
         st.markdown("---")
         c_cpk, c_ipk = st.columns(2)
         with c_cpk:
-            # Fórmula Maestra de Utilidad Neta
             costos_completos_proyectados = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb + total_accesorios_mxn
             margen_decimal = margen_objetivo / 100.0
             
             if km_final > 0 and margen_decimal < 1:
                 venta_total_requerida = costos_completos_proyectados / (1 - margen_decimal)
-                # Al total a cobrar le quitamos los gastos directos para saber a cuánto vender el puro flete
                 flete_requerido = venta_total_requerida - total_fsc_mxn - casetas - total_ajuste_comb - total_accesorios_mxn
                 ipk_sugerido_mxn = flete_requerido / km_final
             else:
@@ -439,36 +464,47 @@ with tab_config:
     st.markdown("## ⚙️ Configuración de Costeo Operativo ")
     st.info("Estos parámetros controlan el 'Cerebro Financiero' del cotizador. Las modificaciones se aplican en tiempo real.")
     
-    col_c1, col_c2 = st.columns(2)
+    col_c1, col_c2, col_c3 = st.columns(3)
+    
     with col_c1:
-        st.subheader("1. Gastos Variables y Administrativos")
-        st.session_state.w_llantas = st.number_input("Llantas ($/km)", value=st.session_state.w_llantas, step=0.01)
-        st.session_state.w_mtto = st.number_input("Mantenimiento Motriz ($/km)", value=st.session_state.w_mtto, step=0.01)
+        st.subheader("1. Gastos Variables (Por Distancia)")
+        st.markdown("**Ruta Larga (> 350 km)**")
+        st.session_state.w_llantas_largo = st.number_input("Llantas Larga ($/km)", value=st.session_state.w_llantas_largo, step=0.01)
+        st.session_state.w_mtto_largo = st.number_input("Mtto. Motriz Larga ($/km)", value=st.session_state.w_mtto_largo, step=0.01)
+        st.session_state.gasto_op_largo = st.number_input("Gasto Op. Largo ($)", value=st.session_state.gasto_op_largo, step=10.0)
+        
+        st.markdown("**Ruta Corta (<= 350 km)**")
+        st.session_state.w_llantas_corto = st.number_input("Llantas Corta ($/km)", value=st.session_state.w_llantas_corto, step=0.01)
+        st.session_state.w_mtto_corto = st.number_input("Mtto. Motriz Corta ($/km)", value=st.session_state.w_mtto_corto, step=0.01)
+        st.session_state.gasto_op_corto = st.number_input("Gasto Op. Corto ($)", value=st.session_state.gasto_op_corto, step=10.0)
+
+        st.markdown("---")
+        st.subheader("2. Operador y Administrativos")
         st.session_state.w_operador = st.number_input("Sueldo Operador Base ($/km)", value=st.session_state.w_operador, step=0.01)
         st.session_state.w_carga_soc = st.number_input("Carga Social (%)", value=st.session_state.w_carga_soc, step=1.0)
-        st.session_state.w_admin = st.number_input("Gasto Administrativo Asignado ($/km)", value=st.session_state.w_admin, step=0.01)
+        st.session_state.w_admin = st.number_input("Gasto Administrativo ($/km)", value=st.session_state.w_admin, step=0.01)
+
+    with col_c2:
+        st.subheader("3. Costos Fijos y Equipos")
+        st.session_state.valor_tractor = st.number_input("Valor de Adquisición Tractor ($)", value=st.session_state.valor_tractor, step=50000.0)
+        st.session_state.valor_caja = st.number_input("Valor de Adquisición Caja ($)", value=st.session_state.valor_caja, step=10000.0)
+        st.markdown("*Nota: La fórmula automática de depreciación se activará en la Fase 3.*")
         
         st.markdown("---")
-        st.subheader("2. Gastos Operativos ")
-        st.session_state.gasto_op_largo = st.number_input("Gasto Op. Ruta Larga (>400km) ($)", value=st.session_state.gasto_op_largo, step=10.0)
-        st.session_state.gasto_op_corto = st.number_input("Gasto Op. Tramo Corto (<=400km) ($)", value=st.session_state.gasto_op_corto, step=10.0)
-        
-    with col_c2:
-        st.subheader("3. Costos Fijos Mensuales (Capex y Seguros)")
         st.session_state.w_seguro = st.number_input("Seguro Tractor ($/mes)", value=st.session_state.w_seguro, step=100.0)
         st.session_state.w_gps_tracto = st.number_input("GPS Tractor ($/mes)", value=st.session_state.w_gps_tracto, step=10.0)
         st.session_state.w_gps_caja = st.number_input("GPS Caja ($/mes)", value=st.session_state.w_gps_caja, step=10.0)
-        st.session_state.w_dep_tracto = st.number_input("Depreciación Tractor ($/mes)", value=st.session_state.w_dep_tracto, step=100.0)
-        st.session_state.w_dep_caja = st.number_input("Depreciación Caja ($/mes)", value=st.session_state.w_dep_caja, step=10.0)
+        st.session_state.w_dep_tracto = st.number_input("Depreciación Fija Tractor ($/mes)", value=st.session_state.w_dep_tracto, step=100.0)
+        st.session_state.w_dep_caja = st.number_input("Depreciación Fija Caja ($/mes)", value=st.session_state.w_dep_caja, step=10.0)
+
+    with col_c3:
+        st.subheader("4. Metas de Kilometraje")
+        st.session_state.km_mes_tracto_largo = st.number_input("KM Larga (Tracto)", value=st.session_state.km_mes_tracto_largo, step=500.0)
+        st.session_state.km_mes_tracto_corto = st.number_input("KM Corta (Tracto)", value=st.session_state.km_mes_tracto_corto, step=500.0)
+        st.session_state.km_mes_caja_largo = st.number_input("KM Larga (Caja)", value=st.session_state.km_mes_caja_largo, step=500.0)
+        st.session_state.km_mes_caja_corto = st.number_input("KM Corta (Caja)", value=st.session_state.km_mes_caja_corto, step=500.0)
         
         st.markdown("---")
-        st.subheader("4. Metas de Kilometraje Mensual ")
-        c_km1, c_km2 = st.columns(2)
-        with c_km1:
-            st.markdown("**Tractor**")
-            st.session_state.km_mes_tracto_largo = st.number_input("KM Ruta Larga (Tracto)", value=st.session_state.km_mes_tracto_largo, step=500.0)
-            st.session_state.km_mes_tracto_corto = st.number_input("KM Tramo Corto (Tracto)", value=st.session_state.km_mes_tracto_corto, step=500.0)
-        with c_km2:
-            st.markdown("**Caja**")
-            st.session_state.km_mes_caja_largo = st.number_input("KM Ruta Larga (Caja)", value=st.session_state.km_mes_caja_largo, step=500.0)
-            st.session_state.km_mes_caja_corto = st.number_input("KM Tramo Corto (Caja)", value=st.session_state.km_mes_caja_corto, step=500.0)
+        st.subheader("5. Ajustes de Utilidad (Extras)")
+        st.session_state.margen_cruce = st.number_input("Margen extra Cruces (%)", value=st.session_state.margen_cruce, step=1.0)
+        st.session_state.margen_accesorios = st.number_input("Margen extra Accesorios (%)", value=st.session_state.margen_accesorios, step=1.0)
