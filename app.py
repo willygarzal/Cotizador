@@ -248,7 +248,6 @@ with tab_cot:
             st.markdown("**Accesorio Especial / Maniobra Libre**")
             col_p1, col_p2 = st.columns([2, 1])
             desc_personalizado = col_p1.text_input("Descripción del cargo")
-            # TITULO CORTO APLICADO
             monto_personalizado = col_p2.number_input("Costo ($)", min_value=0.0, step=100.0)
             if desc_personalizado and monto_personalizado > 0:
                 subtotal_costo = monto_personalizado
@@ -312,6 +311,63 @@ with tab_cot:
             delta=f"Margen Neto Real: {margen_neto_real:.1f}%", 
             delta_color=color_delta
         )
+
+    # =========================================================================
+    # NUEVO BLOQUE: TABLERO DE NEGOCIACIÓN (TARGET VS IDEAL)
+    # =========================================================================
+    st.markdown("---")
+    st.header("🤝 Tablero de Negociación: Tarifa Target vs Ideal")
+    
+    with st.container(border=True):
+        col_ideal, col_target = st.columns(2)
+        
+        with col_ideal:
+            st.subheader("🎯 Tu Escenario Ideal (Calculado)")
+            st.write("Basado en tus métricas actuales y margen objetivo.")
+            st.metric("Tarifa a Cobrar (Total MXN)", f"${total_mxn_neto:,.2f}")
+            st.metric("Utilidad Proyectada", f"${utilidad_neta_viaje_actual:,.2f}", f"{margen_neto_real:.1f}% margen")
+            
+        with col_target:
+            st.subheader("💼 Escenario del Cliente (Target)")
+            tarifa_target = st.number_input("Tarifa Ofrecida Total (MXN)", min_value=0.0, value=float(total_mxn_neto), step=500.0)
+            
+            st.write("**¿Qué accesorios de los seleccionados arriba te pide absorber en esta tarifa?**")
+            costo_absorbido_target = 0.0
+            
+            if detalle_accesorios:
+                for acc, datos in detalle_accesorios.items():
+                    # Si el usuario palomea el checkbox, ese costo se va en contra de su utilidad
+                    if st.checkbox(f"Absorber {acc} (Costo: ${datos['costo']:,.2f})", key=f"target_check_{acc}"):
+                        costo_absorbido_target += datos['costo']
+            else:
+                st.info("No has seleccionado accesorios extra en la sección superior.")
+                
+            # Calculamos la utilidad real para el escenario Target
+            # Partimos del egreso base (movimiento puro del camión + casetas + FSC) 
+            egreso_base_sin_acc = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb
+            # Y le sumamos SOLO los accesorios que aceptaste absorber
+            costo_target_real = egreso_base_sin_acc + costo_absorbido_target
+            
+            utilidad_target = tarifa_target - costo_target_real
+            margen_target = (utilidad_target / tarifa_target) * 100 if tarifa_target > 0 else 0
+            
+            # Semáforo dinámico
+            if margen_target >= margen_objetivo:
+                color = "🟢"
+                estado = "Excelente Negocio"
+            elif margen_target >= (margen_objetivo / 2): # Ejemplo: si buscas 20%, arriba de 10% es ajustado pero sano
+                color = "🟡"
+                estado = "Margen Ajustado"
+            elif margen_target >= 0:
+                color = "🟠"
+                estado = "Punto de Equilibrio (Peligro)"
+            else:
+                color = "🔴"
+                estado = "Pérdida / Riesgo Alto"
+                
+            st.metric("Utilidad Real (Target)", f"${utilidad_target:,.2f}", f"{margen_target:.2f}% de margen")
+            st.markdown(f"**Diagnóstico:** {color} {estado}")
+    # =========================================================================
 
     st.markdown("---")
     col_btn_add, col_btn_clear = st.columns([3, 1])
@@ -395,7 +451,6 @@ with tab_cot:
 
         for r in rutas_pdf:
             pdf.cell(35, 8, r["Origen"][:20], 1, 0, 'C'); pdf.cell(35, 8, r["Destino"][:20], 1, 0, 'C')
-            # 12 CARACTERES PARA IMPORTACION/EXPORTACION
             pdf.cell(20, 8, r.get("Servicio", tipo_op)[:12], 1, 0, 'C'); pdf.cell(15, 8, str(r["KM"]), 1, 0, 'C')
             pdf.cell(20, 8, f"${(r['Flete'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(20, 8, f"${(r['Casetas'] * f_conv):,.2f}", 1, 0, 'C')
             pdf.cell(20, 8, f"${(r['FSC'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(25, 8, f"${(r['Total MXN'] * f_conv):,.2f}", 1, 1, 'C')
