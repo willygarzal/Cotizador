@@ -120,12 +120,10 @@ with tab_cot:
         
         ruta_actual = f"{orig}-{dest}"
         
-        # MAPA SIEMPRE VISIBLE
         if orig and dest:
             m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
             st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
             
-            # CONSULTA A LA API (Protegida)
             if ruta_actual != st.session_state.ruta_previa:
                 try:
                     dist_api = 0.0
@@ -235,10 +233,16 @@ with tab_cot:
                     costo = col_c2.number_input(f"Costo ($) - {acc}", min_value=0.0, value=float(precios_accesorios[acc]), step=50.0, key=f"costo_{acc}")
                     
                     subtotal_costo = cant * costo
+                    
+                    # --- AQUÍ ESTÁ LA NUEVA MAGIA DE RENTABILIDAD EXACTA ---
                     if acc == "CRUCE":
-                        subtotal_venta = subtotal_costo * (1 + (st.session_state.margen_cruce / 100.0))
+                        margen_dec = min(st.session_state.margen_cruce / 100.0, 0.99)
                     else:
-                        subtotal_venta = subtotal_costo * (1 + (st.session_state.margen_accesorios / 100.0))
+                        margen_dec = min(st.session_state.margen_accesorios / 100.0, 0.99)
+                        
+                    # Precio = Costo / (1 - Margen)
+                    subtotal_venta = subtotal_costo / (1 - margen_dec) if margen_dec < 1 else subtotal_costo
+                    # ---------------------------------------------------------
                         
                     total_accesorios_costo += subtotal_costo
                     total_accesorios_venta += subtotal_venta
@@ -251,7 +255,12 @@ with tab_cot:
             monto_personalizado = col_p2.number_input("Costo ($)", min_value=0.0, step=100.0)
             if desc_personalizado and monto_personalizado > 0:
                 subtotal_costo = monto_personalizado
-                subtotal_venta = subtotal_costo * (1 + (st.session_state.margen_accesorios / 100.0))
+                
+                # --- MAGIA APLICADA TAMBIÉN AL ACCESORIO PERSONALIZADO ---
+                margen_dec_custom = min(st.session_state.margen_accesorios / 100.0, 0.99)
+                subtotal_venta = subtotal_costo / (1 - margen_dec_custom) if margen_dec_custom < 1 else subtotal_costo
+                # ---------------------------------------------------------
+                
                 total_accesorios_costo += subtotal_costo
                 total_accesorios_venta += subtotal_venta
                 detalle_accesorios[desc_personalizado] = {"cantidad": 1.0, "costo": subtotal_costo, "venta": subtotal_venta}
@@ -313,7 +322,7 @@ with tab_cot:
         )
 
     # =========================================================================
-    # NUEVO BLOQUE: TABLERO DE NEGOCIACIÓN (TARGET VS IDEAL)
+    # NUEVO BLOQUE: TABLERO DE NEGOCIACIÓN MULTIMONEDA
     # =========================================================================
     st.markdown("---")
     st.header("🤝 Tablero de Negociación: Tarifa Target vs Ideal")
@@ -321,41 +330,50 @@ with tab_cot:
     with st.container(border=True):
         col_ideal, col_target = st.columns(2)
         
+        es_usd = moneda_neg == "USD (Dólares)"
+        moneda_label = "USD" if es_usd else "MXN"
+        
+        tarifa_ideal_mostrar = total_usd_neto if es_usd else total_mxn_neto
+        utilidad_ideal_mostrar = utilidad_neta_viaje_actual / tc if es_usd else utilidad_neta_viaje_actual
+        
         with col_ideal:
-            st.subheader("🎯 Tu Escenario Ideal (Calculado)")
-            st.write("Basado en tus métricas actuales y margen objetivo.")
-            st.metric("Tarifa a Cobrar (Total MXN)", f"${total_mxn_neto:,.2f}")
-            st.metric("Utilidad Proyectada", f"${utilidad_neta_viaje_actual:,.2f}", f"{margen_neto_real:.1f}% margen")
+            st.subheader("🎯 Tu Escenario Ideal")
+            st.write(f"Basado en tus métricas y margen del {margen_objetivo}%.")
+            st.metric(f"Tarifa a Cobrar ({moneda_label})", f"${tarifa_ideal_mostrar:,.2f}")
+            st.metric(f"Utilidad Proyectada ({moneda_label})", f"${utilidad_ideal_mostrar:,.2f}", f"{margen_neto_real:.1f}% margen")
+            if es_usd:
+                st.caption(f"Equivalente a **${total_mxn_neto:,.2f} MXN** (TC: {tc})")
             
         with col_target:
             st.subheader("💼 Escenario del Cliente (Target)")
-            tarifa_target = st.number_input("Tarifa Ofrecida Total (MXN)", min_value=0.0, value=float(total_mxn_neto), step=500.0)
+            paso_input = 50.0 if es_usd else 500.0
+            tarifa_target_input = st.number_input(f"Tarifa Ofrecida Total ({moneda_label})", min_value=0.0, value=float(tarifa_ideal_mostrar), step=paso_input)
             
-            st.write("**¿Qué accesorios de los seleccionados arriba te pide absorber en esta tarifa?**")
-            costo_absorbido_target = 0.0
+            tarifa_target_mxn = tarifa_target_input * tc if es_usd else tarifa_target_input
+            
+            st.write("**¿Qué accesorios te pide absorber en esta tarifa?**")
+            costo_absorbido_target_mxn = 0.0
             
             if detalle_accesorios:
                 for acc, datos in detalle_accesorios.items():
-                    # Si el usuario palomea el checkbox, ese costo se va en contra de su utilidad
-                    if st.checkbox(f"Absorber {acc} (Costo: ${datos['costo']:,.2f})", key=f"target_check_{acc}"):
-                        costo_absorbido_target += datos['costo']
+                    costo_acc_mostrar = datos['costo'] / tc if es_usd else datos['costo']
+                    if st.checkbox(f"Absorber {acc} (Costo interno: ${costo_acc_mostrar:,.2f} {moneda_label})", key=f"target_check_{acc}"):
+                        costo_absorbido_target_mxn += datos['costo']
             else:
                 st.info("No has seleccionado accesorios extra en la sección superior.")
                 
-            # Calculamos la utilidad real para el escenario Target
-            # Partimos del egreso base (movimiento puro del camión + casetas + FSC) 
             egreso_base_sin_acc = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb
-            # Y le sumamos SOLO los accesorios que aceptaste absorber
-            costo_target_real = egreso_base_sin_acc + costo_absorbido_target
+            costo_target_real_mxn = egreso_base_sin_acc + costo_absorbido_target_mxn
             
-            utilidad_target = tarifa_target - costo_target_real
-            margen_target = (utilidad_target / tarifa_target) * 100 if tarifa_target > 0 else 0
+            utilidad_target_mxn = tarifa_target_mxn - costo_target_real_mxn
+            margen_target = (utilidad_target_mxn / tarifa_target_mxn) * 100 if tarifa_target_mxn > 0 else 0
             
-            # Semáforo dinámico
+            utilidad_target_mostrar = utilidad_target_mxn / tc if es_usd else utilidad_target_mxn
+            
             if margen_target >= margen_objetivo:
                 color = "🟢"
                 estado = "Excelente Negocio"
-            elif margen_target >= (margen_objetivo / 2): # Ejemplo: si buscas 20%, arriba de 10% es ajustado pero sano
+            elif margen_target >= (margen_objetivo / 2):
                 color = "🟡"
                 estado = "Margen Ajustado"
             elif margen_target >= 0:
@@ -365,7 +383,7 @@ with tab_cot:
                 color = "🔴"
                 estado = "Pérdida / Riesgo Alto"
                 
-            st.metric("Utilidad Real (Target)", f"${utilidad_target:,.2f}", f"{margen_target:.2f}% de margen")
+            st.metric(f"Utilidad Real Target ({moneda_label})", f"${utilidad_target_mostrar:,.2f}", f"{margen_target:.2f}% de margen")
             st.markdown(f"**Diagnóstico:** {color} {estado}")
     # =========================================================================
 
