@@ -6,6 +6,9 @@ import pandas as pd
 from datetime import datetime
 import io
 import requests
+import base64
+import tempfile
+import os
 
 # --- 1. CONFIGURACIÓN ---
 try:
@@ -234,15 +237,12 @@ with tab_cot:
                     
                     subtotal_costo = cant * costo
                     
-                    # --- AQUÍ ESTÁ LA NUEVA MAGIA DE RENTABILIDAD EXACTA ---
                     if acc == "CRUCE":
                         margen_dec = min(st.session_state.margen_cruce / 100.0, 0.99)
                     else:
                         margen_dec = min(st.session_state.margen_accesorios / 100.0, 0.99)
                         
-                    # Precio = Costo / (1 - Margen)
                     subtotal_venta = subtotal_costo / (1 - margen_dec) if margen_dec < 1 else subtotal_costo
-                    # ---------------------------------------------------------
                         
                     total_accesorios_costo += subtotal_costo
                     total_accesorios_venta += subtotal_venta
@@ -255,11 +255,8 @@ with tab_cot:
             monto_personalizado = col_p2.number_input("Costo ($)", min_value=0.0, step=100.0)
             if desc_personalizado and monto_personalizado > 0:
                 subtotal_costo = monto_personalizado
-                
-                # --- MAGIA APLICADA TAMBIÉN AL ACCESORIO PERSONALIZADO ---
                 margen_dec_custom = min(st.session_state.margen_accesorios / 100.0, 0.99)
                 subtotal_venta = subtotal_costo / (1 - margen_dec_custom) if margen_dec_custom < 1 else subtotal_costo
-                # ---------------------------------------------------------
                 
                 total_accesorios_costo += subtotal_costo
                 total_accesorios_venta += subtotal_venta
@@ -322,7 +319,7 @@ with tab_cot:
         )
 
     # =========================================================================
-    # NUEVO BLOQUE: TABLERO DE NEGOCIACIÓN MULTIMONEDA
+    # TABLERO DE NEGOCIACIÓN MULTIMONEDA
     # =========================================================================
     st.markdown("---")
     st.header("🤝 Tablero de Negociación: Tarifa Target vs Ideal")
@@ -452,33 +449,85 @@ with tab_cot:
     with a2:
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", "B", 20); pdf.set_text_color(0, 51, 102); pdf.cell(0, 10, empresa_remitente, ln=True, align='L')
-        pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "B", 14); pdf.cell(0, 8, "COTIZACIÓN", ln=True, align='R')
-        pdf.set_font("Arial", "", 10); pdf.cell(0, 5, f"{lugar_expedicion} {fecha_texto}", ln=True, align='R'); pdf.ln(5)
-        pdf.set_font("Arial", "B", 10); pdf.cell(0, 5, f"Para. {empresa_cliente}", ln=True); pdf.cell(0, 5, f"Atención. {atencion_cliente}", ln=True); pdf.ln(5)
-        pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 5, "Por medio de la presente cotización, informo a usted las tarifas que actualmente manejamos en las siguientes rutas y/o servicios:"); pdf.ln(4)
         
-        pdf.set_font("Arial", "B", 8); pdf.set_fill_color(220, 220, 220)
+        # --- PROCESAMIENTO DEL LOGOTIPO EN BASE64 ---
+        logo_base64_str = "iVBORw0KGgoAAAANSUhEUgAAAioAAAIqCAMAAAA97pGBAAABAlBMVEX///8EAAZiFxkAAADs0joAAAORkZK2tbY/PkDZ2Nmmpabx2DtZABdDQkNoZmhhFBbu5+dYAADIyMhUU1X19fUIAAuamZpzcnNmGRtsa2zp6elOTU+9vb7k4+Ty8vKAf4EqKCvy698SEBRRAADlyCxfDhgdHB5bAADrzhs1NDXPzs9dBxgWExeLiovTsjR7QB/JpjHjxjivhiuGTyHdvjaPXCOYaSa8lS5wLhzAmy/MqTLXtzVeXV52Ojudd3jbzc6BTU5sKBu4n5/XyMigcih/RSCVZCWpfiqfe3y1jC1rJynGsbKJXF1xMzUjIyREAAB/QxKSZ2irjI2xlJR6OQDBmgUZUAw7AAAV8UlEQVR4nO3dCVfbSLrGcdvCGBsIIRgMBmyGX"
+        
+        try:
+            # Añadimos '===' por si le falta relleno al final (padding) para que no falle al decodificar
+            img_data = base64.b64decode(logo_base64_str + "===")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                tmp.write(img_data)
+                logo_path = tmp.name
+            
+            # Se respetan las coordenadas x=5 y y=20
+            pdf.image(logo_path, x=5, y=20, w=45)
+            os.remove(logo_path)
+        except Exception as e:
+            pass 
+        # ------------------------------------------------
+        
+        # --- ENCABEZADOS Y TEXTOS ---
+        pdf.set_xy(55, 20) 
+        pdf.set_font("Arial", "B", 20)
+        pdf.set_text_color(0, 51, 102)
+        pdf.cell(0, 10, empresa_remitente, ln=True, align='L')
+        
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 8, "COTIZACIÓN", ln=True, align='R')
+        
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 5, f"{lugar_expedicion} {fecha_texto}", ln=True, align='R')
+        pdf.ln(5)
+        
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(0, 5, f"Para. {empresa_cliente}", ln=True)
+        pdf.cell(0, 5, f"Atención. {atencion_cliente}", ln=True)
+        pdf.ln(5)
+        
+        pdf.set_font("Arial", "", 10)
+        pdf.multi_cell(0, 5, "Por medio de la presente cotización, informo a usted las tarifas que actualmente manejamos en las siguientes rutas y/o servicios:")
+        pdf.ln(4)
+        
+        pdf.set_font("Arial", "B", 8)
+        pdf.set_fill_color(220, 220, 220)
         w_pdf = [35, 35, 20, 15, 20, 20, 20, 25]
-        for h in ["Origen", "Destino", "Servicio", "KMS", "Flete", "Casetas", "FSC", f"Total {moneda_tag}"]: pdf.cell(w_pdf[["Origen", "Destino", "Servicio", "KMS", "Flete", "Casetas", "FSC", f"Total {moneda_tag}"].index(h)], 8, h, 1, 0, 'C', True)
+        for h in ["Origen", "Destino", "Servicio", "KMS", "Flete", "Casetas", "FSC", f"Total {moneda_tag}"]: 
+            pdf.cell(w_pdf[["Origen", "Destino", "Servicio", "KMS", "Flete", "Casetas", "FSC", f"Total {moneda_tag}"].index(h)], 8, h, 1, 0, 'C', True)
         pdf.ln()
         
         pdf.set_font("Arial", "", 8)
         rutas_pdf = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{"Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final, "Flete": flete_neto_mxn, "Casetas": casetas, "FSC": total_fsc_mxn, "Total MXN": total_mxn_neto}]
+        
+        # Lógica de conversión activada
         f_conv = (1/tc) if moneda_neg == "USD (Dólares)" else 1
 
         for r in rutas_pdf:
-            pdf.cell(35, 8, r["Origen"][:20], 1, 0, 'C'); pdf.cell(35, 8, r["Destino"][:20], 1, 0, 'C')
-            pdf.cell(20, 8, r.get("Servicio", tipo_op)[:12], 1, 0, 'C'); pdf.cell(15, 8, str(r["KM"]), 1, 0, 'C')
-            pdf.cell(20, 8, f"${(r['Flete'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(20, 8, f"${(r['Casetas'] * f_conv):,.2f}", 1, 0, 'C')
-            pdf.cell(20, 8, f"${(r['FSC'] * f_conv):,.2f}", 1, 0, 'C'); pdf.cell(25, 8, f"${(r['Total MXN'] * f_conv):,.2f}", 1, 1, 'C')
+            pdf.cell(35, 8, r["Origen"][:20], 1, 0, 'C')
+            pdf.cell(35, 8, r["Destino"][:20], 1, 0, 'C')
+            pdf.cell(20, 8, r.get("Servicio", tipo_op)[:12], 1, 0, 'C')
+            pdf.cell(15, 8, str(r["KM"]), 1, 0, 'C')
+            pdf.cell(20, 8, f"${(r['Flete'] * f_conv):,.2f}", 1, 0, 'C')
+            pdf.cell(20, 8, f"${(r['Casetas'] * f_conv):,.2f}", 1, 0, 'C')
+            pdf.cell(20, 8, f"${(r['FSC'] * f_conv):,.2f}", 1, 0, 'C')
+            pdf.cell(25, 8, f"${(r['Total MXN'] * f_conv):,.2f}", 1, 1, 'C')
             
         if total_ajuste_comb > 0 or detalle_accesorios:
-            pdf.ln(2); pdf.set_font("Arial", "B", 8); pdf.cell(0, 5, f"Cargos Adicionales ({moneda_tag}):", ln=True); pdf.set_font("Arial", "", 8)
-            if total_ajuste_comb > 0: pdf.cell(0, 5, f"  - Ajuste de Combustible: ${(total_ajuste_comb * f_conv):,.2f}", ln=True)
-            for acc, datos in detalle_accesorios.items(): pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${(datos['venta'] * f_conv):,.2f}", ln=True)
+            pdf.ln(2)
+            pdf.set_font("Arial", "B", 8)
+            pdf.cell(0, 5, f"Cargos Adicionales ({moneda_tag}):", ln=True)
+            pdf.set_font("Arial", "", 8)
+            if total_ajuste_comb > 0: 
+                pdf.cell(0, 5, f"  - Ajuste de Combustible: ${(total_ajuste_comb * f_conv):,.2f}", ln=True)
+            for acc, datos in detalle_accesorios.items(): 
+                pdf.cell(0, 5, f"  - {acc} ({datos['cantidad']} mov): ${(datos['venta'] * f_conv):,.2f}", ln=True)
         
-        pdf.ln(3); pdf.set_font("Arial", "B", 9); pdf.cell(0, 5, "Caja Regular", ln=True); pdf.cell(0, 5, "No materiales peligrosos", ln=True); pdf.ln(2)
+        pdf.ln(3)
+        pdf.set_font("Arial", "B", 9)
+        pdf.cell(0, 5, "Caja Regular", ln=True)
+        pdf.cell(0, 5, "No materiales peligrosos", ln=True)
+        pdf.ln(2)
         pdf.set_font("Arial", "", 8)
         clausulas_str = (
             "Propuesta vigente por 30 dias para su aceptacion, posteriormente sera valida por 12 meses. Sujeto a disponibilidad de equipo.\n\n"
@@ -495,20 +544,36 @@ with tab_cot:
             "- La variacion se actualiza mensualmente.\n- Equipo de sujecion se cobra por aparte.\n- Terminos de pago, 15 dias de credito.\n\n"
             "Para mejor servicio, por favor programe con anticipacion sus requerimientos.\nImportes en Moneda Nacional antes de Impuestos. Sujeto a lo dispuesto en la Ley del Impuesto al Valor Agregado."
         )
-        pdf.multi_cell(0, 4, clausulas_str); pdf.ln(5); pdf.cell(0, 5, "Esperando recibir su preferencia, quedo a sus ordenes.", ln=True); pdf.ln(8)
-        pdf.set_font("Arial", "B", 9); pdf.cell(95, 5, "Atentamente", align='C'); pdf.cell(95, 5, "Acepto Tarifas y Condiciones", align='C', ln=True); pdf.ln(12)
-        pdf.cell(95, 5, "___________________________________", align='C'); pdf.cell(95, 5, "___________________________________", align='C', ln=True)
-        pdf.set_font("Arial", "", 9); pdf.cell(95, 5, nombre_remitente, align='C'); pdf.cell(95, 5, atencion_cliente, align='C', ln=True)
-        pdf.cell(95, 5, empresa_remitente, align='C'); pdf.cell(95, 5, empresa_cliente, align='C', ln=True)
+        pdf.multi_cell(0, 4, clausulas_str)
+        pdf.ln(5)
+        pdf.cell(0, 5, "Esperando recibir su preferencia, quedo a sus ordenes.", ln=True)
+        pdf.ln(8)
+        
+        pdf.set_font("Arial", "B", 9)
+        pdf.cell(95, 5, "Atentamente", align='C')
+        pdf.cell(95, 5, "Acepto Tarifas y Condiciones", align='C', ln=True)
+        pdf.ln(12)
+        
+        pdf.cell(95, 5, "___________________________________", align='C')
+        pdf.cell(95, 5, "___________________________________", align='C', ln=True)
+        pdf.set_font("Arial", "", 9)
+        pdf.cell(95, 5, nombre_remitente, align='C')
+        pdf.cell(95, 5, atencion_cliente, align='C', ln=True)
+        pdf.cell(95, 5, empresa_remitente, align='C')
+        pdf.cell(95, 5, empresa_cliente, align='C', ln=True)
 
-        try: st.download_button("📄 Descargar PDF", pdf.output(dest='S').encode('latin-1'), f"Cotizacion_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
-        except Exception as e: pass
+        try: 
+            st.download_button("📄 Descargar PDF", pdf.output(dest='S').encode('latin-1'), f"Cotizacion_{empresa_cliente}.pdf", "application/pdf", use_container_width=True)
+        except Exception as e: 
+            pass
 
     with a3:
         wa_text = f"*{empresa_remitente} - COTIZACIÓN*\n\n*Fecha:* {fecha_texto}\n*Para:* {empresa_cliente}\n\n"
         rutas_wa = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{"Origen": orig, "Destino": dest, "KM": km_final, "Total MXN": total_mxn_neto}]
-        for r in rutas_wa: wa_text += f"📍 {r['Origen']} a {r['Destino']} ({r['KM']} KMS)\n"
-        if total_ajuste_comb > 0: wa_text += f"• *Ajuste de Combustible:* ${total_ajuste_comb:,.2f}\n"
+        for r in rutas_wa: 
+            wa_text += f"📍 {r['Origen']} a {r['Destino']} ({r['KM']} KMS)\n"
+        if total_ajuste_comb > 0: 
+            wa_text += f"• *Ajuste de Combustible:* ${total_ajuste_comb:,.2f}\n"
         wa_text += f"\n💰 *TOTAL:* ${gran_total_mxn:,.2f} {moneda_tag}\n\n*Acepto Tarifas y Condiciones*"
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; width:100%; padding:10px; border-radius:5px; border:none; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
