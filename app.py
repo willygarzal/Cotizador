@@ -314,7 +314,7 @@ with tab_cot:
         st.metric(
             label="Utilidad Neta del Viaje", 
             value=f"${utilidad_neta_viaje_actual:,.2f}", 
-            delta=f"Margen Neto Real: {margen_neto_real:.1f}%", 
+            delta=f"Margen Neto Real: {margen_neto_real:.2f}%", 
             delta_color=color_delta
         )
 
@@ -337,7 +337,7 @@ with tab_cot:
             st.subheader("🎯 Tu Escenario Ideal")
             st.write(f"Basado en tus métricas y margen del {margen_objetivo}%.")
             st.metric(f"Tarifa a Cobrar ({moneda_label})", f"${tarifa_ideal_mostrar:,.2f}")
-            st.metric(f"Utilidad Proyectada ({moneda_label})", f"${utilidad_ideal_mostrar:,.2f}", f"{margen_neto_real:.1f}% margen")
+            st.metric(f"Utilidad Proyectada ({moneda_label})", f"${utilidad_ideal_mostrar:,.2f}", f"{margen_neto_real:.2f}% margen")
             if es_usd:
                 st.caption(f"Equivalente a **${total_mxn_neto:,.2f} MXN** (TC: {tc})")
             
@@ -589,8 +589,8 @@ with tab_rx:
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Ingreso Total (Venta)", f"${total_mxn_neto:,.2f}")
         k2.metric("Egreso Total (Costo Real)", f"${egreso_total_viaje:,.2f}")
-        k3.metric("EBITDA (Flujo)", f"${ebitda_viaje_actual:,.2f}", f"{margen_ebitda:.1f}%", delta_color="normal" if ebitda_viaje_actual>0 else "inverse")
-        k4.metric("Utilidad Neta", f"${utilidad_neta_viaje_actual:,.2f}", f"{margen_neto:.1f}%", delta_color="normal" if utilidad_neta_viaje_actual>0 else "inverse")
+        k3.metric("EBITDA (Flujo)", f"${ebitda_viaje_actual:,.2f}", f"{margen_ebitda:.2f}%", delta_color="normal" if ebitda_viaje_actual>0 else "inverse")
+        k4.metric("Utilidad Neta", f"${utilidad_neta_viaje_actual:,.2f}", f"{margen_neto:.2f}%", delta_color="normal" if utilidad_neta_viaje_actual>0 else "inverse")
 
         with st.expander("🔍 Desglose Completo de Egresos", expanded=True):
             st.markdown("#### Costos Directos del Viaje")
