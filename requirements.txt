@@ -2,3 +2,5 @@ streamlit
 googlemaps
 fpdf
 pandas
+requests
+openrouteservice
