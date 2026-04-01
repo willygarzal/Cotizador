@@ -114,7 +114,7 @@ with tab_cot:
     st.markdown("## Resumen de Cotización")
     col_ruta, col_extras = st.columns([2, 1])
 
-        with col_ruta:
+    with col_ruta:
         st.subheader("📍 Ruta ")
         c1, c2 = st.columns(2)
         orig = c1.text_input("Origen", "")
