@@ -186,14 +186,7 @@ with tab_cot:
                         st.error(f"Error en el cálculo de ruteo: {e}")
 
         
-        st.markdown("**Configuración del Viaje:**")
-        ctrl_1, ctrl_2, ctrl_3 = st.columns(3)
-        es_ruta_redonda = ctrl_1.checkbox("🔄 Ruta Redonda")
-        es_doble_operador = ctrl_2.checkbox("👥 Doble Operador")
-        tipo_ruta_manual = ctrl_3.selectbox("Tipo de Ruta", ["Automático", "Mov. Local/Patio", "Forzar Tramo Corto", "Forzar Tramo Largo"])
-        st.markdown("---")
         
-        ruta_actual = f"{orig}-{dest}"
         
         if orig and dest:
             # MAPA VISUAL CON GOOGLE (Se mantiene gratis mediante iframe)
