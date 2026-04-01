@@ -114,11 +114,77 @@ with tab_cot:
     st.markdown("## Resumen de Cotización")
     col_ruta, col_extras = st.columns([2, 1])
 
-    with col_ruta:
+        with col_ruta:
         st.subheader("📍 Ruta ")
         c1, c2 = st.columns(2)
         orig = c1.text_input("Origen", "")
         dest = c2.text_input("Destino", "")
+        # NUEVO: Campo para obligar la ruta
+        via_intermedia = st.text_input("Vía / Punto Intermedio (Opcional para forzar ruta)", value="", placeholder="Ej: Matehuala, San Luis Potosi")
+        
+        st.markdown("**Configuración del Viaje:**")
+        ctrl_1, ctrl_2, ctrl_3 = st.columns(3)
+        es_ruta_redonda = ctrl_1.checkbox("🔄 Ruta Redonda")
+        es_doble_operador = ctrl_2.checkbox("👥 Doble Operador")
+        tipo_ruta_manual = ctrl_3.selectbox("Tipo de Ruta", ["Automático", "Mov. Local/Patio", "Forzar Tramo Corto", "Forzar Tramo Largo"])
+        st.markdown("---")
+        
+        # Le sumamos la vía a la variable para que recalcule si la cambias
+        ruta_actual = f"{orig}-{via_intermedia}-{dest}"
+        
+        if orig and dest:
+            # MAPA VISUAL CON GOOGLE
+            # Si hay una vía, se la pasamos al mapa de Google también usando 'waypoints'
+            if via_intermedia:
+                m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}&waypoints={urllib.parse.quote(via_intermedia)}"
+            else:
+                m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
+            
+            st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
+            
+            if ruta_actual != st.session_state.ruta_previa:
+                with st.spinner("Forzando ruta segura para tractocamión con ORS..."):
+                    try:
+                        dist_api = 0.0
+                        peaje_api = 0.0 
+                        
+                        coordenadas_viaje = []
+                        
+                        # 1. Geocodificar Origen
+                        geo_orig = ors_client.pelias_search(text=orig)
+                        if geo_orig['features']:
+                            coordenadas_viaje.append(geo_orig['features'][0]['geometry']['coordinates'])
+                            
+                        # 2. Geocodificar Vía (Si el despachador escribió algo)
+                        if via_intermedia:
+                            geo_via = ors_client.pelias_search(text=via_intermedia)
+                            if geo_via['features']:
+                                coordenadas_viaje.append(geo_via['features'][0]['geometry']['coordinates'])
+                        
+                        # 3. Geocodificar Destino
+                        geo_dest = ors_client.pelias_search(text=dest)
+                        if geo_dest['features']:
+                            coordenadas_viaje.append(geo_dest['features'][0]['geometry']['coordinates'])
+                            
+                        # Calcular la ruta solo si tenemos al menos Origen y Destino
+                        if len(coordenadas_viaje) >= 2:
+                            ruta = ors_client.directions(
+                                coordinates=coordenadas_viaje,
+                                profile='driving-hgv',
+                                format='geojson'
+                            )
+                            
+                            # 4. Extraer kilómetros totales (ahora leemos el 'summary' para sumar todos los tramos)
+                            dist_api = round(ruta['features'][0]['properties']['summary']['distance'] / 1000.0, 1)
+                        
+                        st.session_state.km_input_key = dist_api
+                        st.session_state.casetas_input_key = peaje_api
+                        st.session_state.ruta_previa = ruta_actual
+                        st.session_state.redonda_previa = False 
+                        
+                    except Exception as e:
+                        st.error(f"Error en el cálculo de ruteo: {e}")
+
         
         st.markdown("**Configuración del Viaje:**")
         ctrl_1, ctrl_2, ctrl_3 = st.columns(3)
