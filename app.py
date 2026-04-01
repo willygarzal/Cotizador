@@ -1,5 +1,6 @@
 import streamlit as st
 import googlemaps
+import openrouteservice
 from fpdf import FPDF
 import urllib.parse
 import pandas as pd
@@ -12,10 +13,15 @@ import os
 
 # --- 1. CONFIGURACIÓN ---
 try:
+    # Mantenemos Google para el mapa visual
     api_key = st.secrets["MAPS_API_KEY"]
     gmaps = googlemaps.Client(key=api_key)
+    
+    # NUEVO: Encendemos el cerebro logístico gratuito de ORS
+    ors_key = st.secrets["ORS_KEY"]
+    ors_client = openrouteservice.Client(key=ors_key)
 except Exception:
-    st.error("⚠️ Configura 'MAPS_API_KEY' en secrets.toml")
+    st.error("⚠️ Configura 'MAPS_API_KEY' y 'ORS_KEY' en los Secrets de Streamlit.")
 
 st.set_page_config(page_title="Cotizador Maestro 53' Pro - Consolidado", layout="wide")
 
@@ -124,41 +130,41 @@ with tab_cot:
         ruta_actual = f"{orig}-{dest}"
         
         if orig and dest:
+            # MAPA VISUAL CON GOOGLE (Se mantiene gratis mediante iframe)
             m_url = f"https://www.google.com/maps/embed/v1/directions?key={api_key}&origin={urllib.parse.quote(orig)}&destination={urllib.parse.quote(dest)}"
             st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
             
             if ruta_actual != st.session_state.ruta_previa:
-                try:
-                    dist_api = 0.0
-                    peaje_api = 0.0
-                    
-                    routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
-                    headers = {"Content-Type": "application/json", "X-Goog-Api-Key": api_key, "X-Goog-FieldMask": "routes.distanceMeters,routes.travelAdvisory.tollInfo"}
-                    payload = {"origin": {"address": orig}, "destination": {"address": dest}, "travelMode": "DRIVE", "extraComputations": ["TOLLS"]}
-                    resp = requests.post(routes_url, json=payload, headers=headers)
-                    
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if "routes" in data and len(data["routes"]) > 0:
-                            ruta_data = data["routes"][0]
-                            if "distanceMeters" in ruta_data: dist_api = round(ruta_data["distanceMeters"] / 1000.0, 1)
-                            if "travelAdvisory" in ruta_data and "tollInfo" in ruta_data["travelAdvisory"]:
-                                peajes = ruta_data["travelAdvisory"]["tollInfo"].get("estimatedPrice", [])
-                                for peaje in peajes:
-                                    if peaje.get("currencyCode") == "MXN":
-                                        costo_auto = float(peaje.get("units", "0")) + (float(peaje.get("nanos", 0)) / 1e9)
-                                        peaje_api += costo_auto * mult_peaje
-                    else:
-                        res_basico = gmaps.directions(orig, dest)
-                        if res_basico: dist_api = round(res_basico[0]['legs'][0]['distance']['value'] / 1000.0, 1)
-                    
-                    st.session_state.km_input_key = dist_api
-                    st.session_state.casetas_input_key = peaje_api
-                    st.session_state.ruta_previa = ruta_actual
-                    st.session_state.redonda_previa = False 
-                    
-                except Exception as e:
-                    st.info("Calculando ruta avanzada...")
+                with st.spinner("Calculando ruta para tractocamión con ORS..."):
+                    try:
+                        dist_api = 0.0
+                        peaje_api = 0.0 # Como ya no usamos a Google para esto, las casetas inician en 0
+                        
+                        # 1. Geocodificar: Convertir ciudad en coordenadas usando ORS
+                        geo_orig = ors_client.pelias_search(text=orig)
+                        geo_dest = ors_client.pelias_search(text=dest)
+                        
+                        if geo_orig['features'] and geo_dest['features']:
+                            coords_orig = geo_orig['features'][0]['geometry']['coordinates']
+                            coords_dest = geo_dest['features'][0]['geometry']['coordinates']
+                            
+                            # 2. Calcular la ruta con perfil de tractocamión (evita restricciones)
+                            ruta = ors_client.directions(
+                                coordinates=[coords_orig, coords_dest],
+                                profile='driving-hgv',
+                                format='geojson'
+                            )
+                            
+                            # 3. Extraer los kilómetros
+                            dist_api = round(ruta['features'][0]['properties']['segments'][0]['distance'] / 1000.0, 1)
+                        
+                        st.session_state.km_input_key = dist_api
+                        st.session_state.casetas_input_key = peaje_api
+                        st.session_state.ruta_previa = ruta_actual
+                        st.session_state.redonda_previa = False 
+                        
+                    except Exception as e:
+                        st.error(f"Error en el cálculo de ruteo: {e}")
 
         if es_ruta_redonda != st.session_state.redonda_previa:
             if es_ruta_redonda:
@@ -454,18 +460,15 @@ with tab_cot:
         logo_base64_str = "iVBORw0KGgoAAAANSUhEUgAAAioAAAIqCAMAAAA97pGBAAABAlBMVEX///8EAAZiFxkAAADs0joAAAORkZK2tbY/PkDZ2Nmmpabx2DtZABdDQkNoZmhhFBbu5+dYAADIyMhUU1X19fUIAAuamZpzcnNmGRtsa2zp6elOTU+9vb7k4+Ty8vKAf4EqKCvy698SEBRRAADlyCxfDhgdHB5bAADrzhs1NDXPzs9dBxgWExeLiovTsjR7QB/JpjHjxjivhiuGTyHdvjaPXCOYaSa8lS5wLhzAmy/MqTLXtzVeXV52Ojudd3jbzc6BTU5sKBu4n5/XyMigcih/RSCVZCWpfiqfe3y1jC1rJynGsbKJXF1xMzUjIyREAAB/QxKSZ2irjI2xlJR6OQDBmgUZUAw7AAAV8UlEQVR4nO3dCVfbSLrGcdvCGBsIIRgMBmyGX"
         
         try:
-            # Añadimos '===' por si le falta relleno al final (padding) para que no falle al decodificar
             img_data = base64.b64decode(logo_base64_str + "===")
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
                 tmp.write(img_data)
                 logo_path = tmp.name
             
-            # Se respetan las coordenadas x=5 y y=20
             pdf.image(logo_path, x=5, y=20, w=45)
             os.remove(logo_path)
         except Exception as e:
             pass 
-        # ------------------------------------------------
         
         # --- ENCABEZADOS Y TEXTOS ---
         pdf.set_xy(55, 20) 
@@ -500,7 +503,6 @@ with tab_cot:
         pdf.set_font("Arial", "", 8)
         rutas_pdf = st.session_state.rutas_propuesta if st.session_state.rutas_propuesta else [{"Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final, "Flete": flete_neto_mxn, "Casetas": casetas, "FSC": total_fsc_mxn, "Total MXN": total_mxn_neto}]
         
-        # Lógica de conversión activada
         f_conv = (1/tc) if moneda_neg == "USD (Dólares)" else 1
 
         for r in rutas_pdf:
