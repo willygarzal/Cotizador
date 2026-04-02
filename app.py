@@ -10,46 +10,11 @@ import requests
 import base64
 import tempfile
 import os
-from bs4 import BeautifulSoup # <-- Nueva importación para el robot
 
-# --- FUNCIÓN PRO: CONSULTA HÍBRIDA DE PEAJES (GMap México Ref) ---
-def consultar_peaje_hibrido(origen, destino):
-    """
-    Busca peajes en la matriz local de GMap México. 
-    Les extrae el IVA automáticamente (/ 1.16) para costeo puro.
-    """
-    # Matriz basada en tus rutas estrella (Costos Tracto 5 ejes T3-S2)
-    matriz_seguridad = {
-        "apodaca": 845.00,
-        "saltillo": 845.00,
-        "ramos arizpe": 845.00,
-        "queretaro": 2782.00,
-        "puebla": 4936.00,      # <-- ¡Actualizado al costo real con IVA de GMap!
-        "cuautitlan": 3808.00,  # Circuito Exterior Mexiquense
-    }
-    
-    # Limpiamos el texto del destino para buscar coincidencias
-    dest_limpio = destino.lower()
-    for ciudad, costo in matriz_seguridad.items():
-        if ciudad in dest_limpio:
-            return costo / 1.16  # <--- ¡AQUÍ ES DONDE SE LE QUITA EL IVA!
-            
-    return 0.0 # Si es una ruta nueva, se queda en 0 para que tú lo escribas
-            
-    return 0.0 # Si es una ruta nueva, se queda en 0 para que tú lo escribas
-
-# --- 1. CONFIGURACIÓN ---
-try:
-    api_key = st.secrets["MAPS_API_KEY"]
-    gmaps = googlemaps.Client(key=api_key)
-    ors_key = st.secrets["ORS_KEY"]
-    ors_client = openrouteservice.Client(key=ors_key)
-except Exception:
-    st.error("⚠️ Configura 'MAPS_API_KEY' y 'ORS_KEY' en los Secrets de Streamlit.")
-
+# --- 1. CONFIGURACIÓN INICIAL DE LA PÁGINA ---
 st.set_page_config(page_title="Cotizador Maestro 53' Pro - Consolidado", layout="wide")
 
-# --- INICIALIZACIÓN DE VARIABLES EN MEMORIA ---
+# --- 2. INICIALIZACIÓN DE VARIABLES EN MEMORIA (INCLUYENDO LA NUEVA MATRIZ DE PEAJES) ---
 if 'historial' not in st.session_state:
     st.session_state.historial = []
 if 'rutas_propuesta' not in st.session_state:
@@ -62,6 +27,17 @@ if 'casetas_input_key' not in st.session_state:
     st.session_state.casetas_input_key = 0.0
 if 'redonda_previa' not in st.session_state:
     st.session_state.redonda_previa = False
+
+# --- AQUÍ VIVE LA MEMORIA DINÁMICA DE TUS RUTAS ---
+if 'matriz_peajes_dinamica' not in st.session_state:
+    st.session_state.matriz_peajes_dinamica = {
+        "apodaca": 980.0,
+        "saltillo": 1150.0,
+        "ramos arizpe": 1100.0,
+        "queretaro": 2850.0,
+        "puebla": 4936.0,
+        "cuautitlan": 3600.0
+    }
 
 default_params = {
     "w_llantas_largo": 0.62, "w_mtto_largo": 1.09, "gasto_op_largo": 247.0,
@@ -87,7 +63,30 @@ precios_accesorios = {
     "MOVIMIENTO EN FALSO": 2610.00
 }
 
-# --- 2. BARRA LATERAL ---
+# --- 3. EL CEREBRO HÍBRIDO (AHORA LEE LA MEMORIA DINÁMICA) ---
+def consultar_peaje_hibrido(origen, destino):
+    """
+    Busca peajes en la memoria dinámica. Si alguien del equipo 
+    agregó una ruta nueva desde la pantalla de Configuración, aquí la encuentra.
+    """
+    dest_limpio = destino.lower()
+    for ciudad, costo in st.session_state.matriz_peajes_dinamica.items():
+        if ciudad in dest_limpio:
+            return costo / 1.16  # Le quitamos el IVA automáticamente
+            
+    return 0.0 # Si es nueva, la deja en 0 para que la agreguen manualmente o la enseñen al sistema
+
+# --- CONEXIÓN A MOTORES DE RUTEO ---
+try:
+    api_key = st.secrets["MAPS_API_KEY"]
+    gmaps = googlemaps.Client(key=api_key)
+    ors_key = st.secrets["ORS_KEY"]
+    ors_client = openrouteservice.Client(key=ors_key)
+except Exception:
+    st.error("⚠️ Configura 'MAPS_API_KEY' y 'ORS_KEY' en los Secrets de Streamlit.")
+
+
+# --- 4. BARRA LATERAL ---
 with st.sidebar:
     st.header("👤 Datos de Cotización")
     empresa_remitente = st.text_input("Nuestra Empresa", "")
@@ -116,8 +115,6 @@ with st.sidebar:
     moneda_neg = st.radio("Cerrar trato en:", ["MXN (Pesos)", "USD (Dólares)"])
     telefono_wa = st.text_input("WhatsApp Cliente", "")
 
-    mult_peaje = 2.193
-
 w_dep_tracto_calc = (st.session_state.valor_tractor - st.session_state.residual_tractor) / (st.session_state.vida_tractor * 12) if st.session_state.vida_tractor > 0 else 0
 w_dep_caja_calc = (st.session_state.valor_caja - st.session_state.residual_caja) / (st.session_state.vida_caja * 12) if st.session_state.vida_caja > 0 else 0
 
@@ -128,9 +125,10 @@ w_seguro = st.session_state.w_seguro
 w_gps_tracto = st.session_state.w_gps_tracto
 w_gps_caja = st.session_state.w_gps_caja
 
-# --- 3. ÁREA PRINCIPAL ---
+# --- 5. ÁREA PRINCIPAL CON 4 PESTAÑAS ---
 tab_cot, tab_rx, tab_hist, tab_config = st.tabs(["🎯 Cotizador Pro", "📊 Rayos X (EBITDA)", "📜 Historial", "⚙️ Configuración Costeo"])
 
+# --- PESTAÑA 1: COTIZADOR ---
 with tab_cot:
     st.markdown("## Resumen de Cotización")
     col_ruta, col_extras = st.columns([2, 1])
@@ -160,7 +158,7 @@ with tab_cot:
             st.markdown(f'<iframe width="100%" height="250" src="{m_url}" style="border-radius:10px; border: 1px solid #ddd;"></iframe>', unsafe_allow_html=True)
             
             if ruta_actual != st.session_state.ruta_previa:
-                with st.spinner("Calculando ruta HGV y consultando peajes GMap..."):
+                with st.spinner("Calculando ruta HGV y consultando peajes en memoria..."):
                     try:
                         dist_api = 0.0
                         peaje_api = 0.0 
@@ -180,7 +178,7 @@ with tab_cot:
                             ruta = ors_client.directions(coordinates=coordenadas_viaje, profile='driving-hgv', format='geojson')
                             dist_api = round(ruta['features'][0]['properties']['summary']['distance'] / 1000.0, 1)
                         
-                        # --- LLAMADA AL NUEVO CEREBRO HÍBRIDO ---
+                        # --- LLAMADA AL NUEVO CEREBRO DINÁMICO ---
                         peaje_api = consultar_peaje_hibrido(orig, dest)
 
                         st.session_state.km_input_key = dist_api
@@ -507,7 +505,7 @@ with tab_cot:
         wa_text += f"\n💰 *TOTAL:* ${gran_total_mxn:,.2f} {moneda_tag}\n\n*Acepto Tarifas y Condiciones*"
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; width:100%; padding:10px; border-radius:5px; border:none; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
-# --- PESTAÑAS 2, 3 y 4 (Sin cambios en lógica financiera) ---
+# --- PESTAÑA 2: TABLERO FINANCIERO DIRECTIVO ---
 with tab_rx:
     st.markdown("## 📊 Radiografía Financiera ")
     if km_final > 0:
@@ -523,10 +521,12 @@ with tab_rx:
             st.write(f"- **Sueldo, Carga Social y Op. Fijo:** ${costo_operador:,.2f}"); st.write(f"- **Costo Real Accesorios:** ${total_accesorios_costo:,.2f}")
             st.write(f"- **Mtto. y Llantas:** ${costo_llantas_mtto:,.2f}"); st.write(f"- **Gastos Admon. y Fijos:** ${costo_admin_viaje + costo_seg_gps_viaje + costo_deprec_viaje:,.2f}")
 
+# --- PESTAÑA 3: HISTORIAL ---
 with tab_hist:
     st.markdown("## 📜 Sábana Financiera de Auditoría")
     if st.session_state.historial: st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
 
+# --- PESTAÑA 4: CONFIGURACIÓN ---
 with tab_config:
     st.markdown("## ⚙️ Configuración de Costeo Operativo ")
     col_c1, col_c2, col_c3 = st.columns(3)
@@ -539,3 +539,25 @@ with tab_config:
     with col_c3:
         st.subheader("Metas KM")
         st.session_state.km_mes_tracto_largo = st.number_input("KM Mes Larga", value=st.session_state.km_mes_tracto_largo)
+
+    # --- NUEVA SECCIÓN DE APRENDIZAJE VISUAL ---
+    st.markdown("---")
+    st.subheader("🛣️ Aprendizaje de Nuevas Rutas (Peajes)")
+    st.info("Si una ruta no arroja casetas en automático, tu equipo puede buscarla en GMap y enseñársela al sistema aquí. (El sistema le quitará el IVA solo, tú pon el costo final que te arroje la página).")
+    
+    col_r1, col_r2, col_r3 = st.columns([2, 2, 1])
+    with col_r1:
+        nueva_ciudad = st.text_input("Nombre de la Ciudad (Ej: San Luis Potosi)")
+    with col_r2:
+        nuevo_peaje = st.number_input("Costo Total GMap CON IVA ($)", min_value=0.0, step=50.0)
+    with col_r3:
+        st.write("") # Espacio para alinear el botón
+        st.write("")
+        if st.button("💾 Enseñar Ruta"):
+            if nueva_ciudad and nuevo_peaje > 0:
+                # La guardamos en minúsculas para que el motor siempre la reconozca
+                st.session_state.matriz_peajes_dinamica[nueva_ciudad.lower()] = nuevo_peaje
+                st.success(f"¡Ruta a {nueva_ciudad} aprendida por el sistema!")
+    
+    with st.expander("Ver Rutas Memorizadas Actualmente"):
+        st.write(st.session_state.matriz_peajes_dinamica)
