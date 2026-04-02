@@ -20,12 +20,12 @@ def consultar_peaje_hibrido(origen, destino):
     """
     # Matriz basada en tus rutas estrella (Costos Tracto 5 ejes T3-S2)
     matriz_seguridad = {
-        "apodaca": 980.0,
-        "saltillo": 1150.0,
-        "ramos arizpe": 1100.0,
-        "queretaro": 2850.0,
-        "puebla": 4936.0,      # <-- ¡Actualizado al costo real con IVA de GMap!
-        "cuautitlan": 3600.0,  # Circuito Exterior Mexiquense
+        "apodaca": 728.30,
+        "saltillo": 728.30,
+        "ramos arizpe": 728.30,
+        "queretaro": 2351.72,
+        "puebla": 4255.17,      # <-- ¡Actualizado al costo real con IVA de GMap!
+        "cuautitlan": 2398.27,  # Circuito Exterior Mexiquense
     }
     
     # Limpiamos el texto del destino para buscar coincidencias
