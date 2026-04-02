@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup # <-- Nueva importación para el robot
 def consultar_peaje_hibrido(origen, destino):
     """
     Busca peajes en la matriz local de GMap México. 
-    Si no lo encuentra, permite entrada manual (0.0).
+    Les extrae el IVA automáticamente (/ 1.16) para costeo puro.
     """
     # Matriz basada en tus rutas estrella (Costos Tracto 5 ejes T3-S2)
     matriz_seguridad = {
@@ -24,7 +24,7 @@ def consultar_peaje_hibrido(origen, destino):
         "saltillo": 1150.0,
         "ramos arizpe": 1100.0,
         "queretaro": 2850.0,
-        "puebla": 4150.0,     # Incluye Arco Norte
+        "puebla": 4936.0,      # <-- ¡Actualizado al costo real con IVA de GMap!
         "cuautitlan": 3600.0,  # Circuito Exterior Mexiquense
     }
     
@@ -32,7 +32,9 @@ def consultar_peaje_hibrido(origen, destino):
     dest_limpio = destino.lower()
     for ciudad, costo in matriz_seguridad.items():
         if ciudad in dest_limpio:
-            return costo
+            return costo / 1.16  # <--- ¡AQUÍ ES DONDE SE LE QUITA EL IVA!
+            
+    return 0.0 # Si es una ruta nueva, se queda en 0 para que tú lo escribas
             
     return 0.0 # Si es una ruta nueva, se queda en 0 para que tú lo escribas
 
