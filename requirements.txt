@@ -4,3 +4,4 @@ fpdf
 pandas
 requests
 openrouteservice
+beautifulsoup4
