@@ -67,18 +67,22 @@ precios_accesorios = {
     "MOVIMIENTO EN FALSO": 2610.00
 }
 
-# --- 3. EL CEREBRO HÍBRIDO (AHORA LEE LA MEMORIA DINÁMICA) ---
+# --- 3. EL CEREBRO HÍBRIDO (CORREGIDO PARA IDA Y VUELTA) ---
 def consultar_peaje_hibrido(origen, destino):
     """
     Busca peajes en la memoria dinámica. Si alguien del equipo 
-    agregó una ruta nueva desde la pantalla de Configuración, aquí la encuentra.
+    agregó una ruta nueva, la encuentra sin importar si es viaje de ida o regreso.
     """
-    dest_limpio = destino.lower()
+    # Unimos el origen y el destino en minúsculas en un solo bloque de texto
+    ruta_completa = f"{origen.lower()} {destino.lower()}"
+    
     for ciudad, costo in st.session_state.matriz_peajes_dinamica.items():
-        if ciudad in dest_limpio:
+        # Buscamos si la ciudad clave está en cualquier parte de la ruta completa
+        if ciudad in ruta_completa:
             return costo / 1.16  # Le quitamos el IVA automáticamente
             
-    return 0.0 # Si es nueva, la deja en 0 para que la agreguen manualmente o la enseñen al sistema
+    return 0.0 # Si es nueva, la deja en 0 para que la agreguen manualmente
+
 
 # --- CONEXIÓN A MOTORES DE RUTEO ---
 try:
