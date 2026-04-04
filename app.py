@@ -36,7 +36,7 @@ if 'matriz_peajes_dinamica' not in st.session_state:
         "ramos arizpe": 845.00,
         "monterrey": 845.00,
         "guadalupe": 845.00,
-        "san nicolas": 845.00,
+        "san nicolas de los garza": 845.00,
         "escobedo": 845.00,
         "queretaro": 2850.0,
         "puebla": 4936.0,
