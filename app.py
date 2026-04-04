@@ -37,10 +37,13 @@ if 'matriz_peajes_dinamica' not in st.session_state:
         "monterrey": 845.00,
         "guadalupe": 845.00,
         "san nicolas de los garza": 845.00,
+        "san luis potosi": 2398.27,
+        "santa catarina": 845.00,
+        "villa de garcia": 845.00,
         "escobedo": 845.00,
-        "queretaro": 2850.0,
-        "puebla": 4936.0,
-        "cuautitlan": 3600.0
+        "queretaro": 2351.72,
+        "puebla": 4255.17,
+        "cuautitlan": 3278.45
     }
 
 default_params = {
