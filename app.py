@@ -31,9 +31,13 @@ if 'redonda_previa' not in st.session_state:
 # --- AQUÍ VIVE LA MEMORIA DINÁMICA DE TUS RUTAS ---
 if 'matriz_peajes_dinamica' not in st.session_state:
     st.session_state.matriz_peajes_dinamica = {
-        "apodaca": 980.0,
-        "saltillo": 1150.0,
-        "ramos arizpe": 1100.0,
+        "apodaca": 845.00,
+        "saltillo": 845.00,
+        "ramos arizpe": 845.00,
+        "monterrey": 845.00,
+        "guadalupe": 845.00,
+        "san nicolas": 845.00,
+        "escobedo": 845.00,
         "queretaro": 2850.0,
         "puebla": 4936.0,
         "cuautitlan": 3600.0
