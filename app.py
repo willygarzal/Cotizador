@@ -43,6 +43,14 @@ if 'matriz_peajes_dinamica' not in st.session_state:
         "escobedo": 845.00,
         "queretaro": 2782.00,
         "puebla": 4936.00,
+        "tlaxcala": 5033.00,
+        "huamantla": 5762.00,
+        "cuautlta": 4502.00,
+        "guadalajara": 2979.00,
+        "zapopan": 4633.00,
+        "cadreyta": 845.00,
+        "salinas victoria": 845.00,
+        "silao": 2979.00,
         "cuautitlan": 3803.00
     }
 
