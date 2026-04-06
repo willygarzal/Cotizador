@@ -52,7 +52,7 @@ if 'matriz_peajes_dinamica' not in st.session_state:
         "cadereyta": 845.00,
         "salinas victoria": 845.00,
         "silao": 2979.00,
-        "pesqueria": 845.00
+        "pesqueria": 845.00,
         "el derramadero": 1331.00,
         "irapuato": 3107.00,
     }
