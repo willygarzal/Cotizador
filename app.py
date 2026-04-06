@@ -186,8 +186,17 @@ with tab_cot:
                         if geo_dest['features']: coordenadas_viaje.append(geo_dest['features'][0]['geometry']['coordinates'])
                             
                         if len(coordenadas_viaje) >= 2:
-                            ruta = ors_client.directions(coordinates=coordenadas_viaje, profile='driving-car', format='geojson')
+                            # --- PILOTO AUTOMÁTICO ANTI-CAÍDAS ---
+                            try:
+                                # Intento 1: Trata de usar Tractocamión (HGV)
+                                ruta = ors_client.directions(coordinates=coordenadas_viaje, profile='driving-hgv', format='geojson')
+                            except Exception:
+                                # Intento 2: Si HGV falla, usa el de auto en automático sin marcar error rojo
+                                ruta = ors_client.directions(coordinates=coordenadas_viaje, profile='driving-car', format='geojson')
+                                st.toast("⚠️ ORS HGV en mantenimiento: Usando cálculo de distancia estándar.")
+                                
                             dist_api = round(ruta['features'][0]['properties']['summary']['distance'] / 1000.0, 1)
+
                         
                         # --- LLAMADA AL NUEVO CEREBRO DINÁMICO ---
                         peaje_api = consultar_peaje_hibrido(orig, dest)
