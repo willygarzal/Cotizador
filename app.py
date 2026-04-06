@@ -43,7 +43,18 @@ if 'matriz_peajes_dinamica' not in st.session_state:
         "escobedo": 845.00,
         "queretaro": 2782.00,
         "puebla": 4936.00,
-        "cuautitlan": 3803.00
+        "cuautitlan": 3803.00,
+        "tlaxcala": 5033.00,
+        "huamantla": 5762.00,
+        "cuautla": 4502.00,
+        "guadalajara": 2979.00,
+        "zapopan": 4633.00,
+        "cadereyta": 845.00,
+        "salinas victoria": 845.00,
+        "silao": 2979.00,
+        "pesqueria": 845.00
+        "el derramadero": 1331.00,
+        "irapuato": 3107.00,
     }
 
 # --- PARÁMETROS OPERATIVOS BASE ---
