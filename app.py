@@ -53,6 +53,7 @@ if 'matriz_peajes_dinamica' not in st.session_state:
         "silao": 2979.00,
         "pesqueria": 845.00,
         "el derramadero": 1331.00,
+        "irapuato": 3107.00,
         "cuautitlan": 3803.00
     }
 
