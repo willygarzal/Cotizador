@@ -585,11 +585,20 @@ with tab_config:
         st.session_state.valor_tractor = st.number_input("Valor Adquisición Tractor ($)", value=float(st.session_state.valor_tractor))
         st.session_state.residual_tractor = st.number_input("Valor Residual Tractor ($)", value=float(st.session_state.residual_tractor))
         st.session_state.vida_tractor = st.number_input("Vida Útil Tractor (Años)", value=int(st.session_state.vida_tractor), step=1)
+        
+        # --- NUEVO: CÁLCULO EN VIVO TRACTOR ---
+        dep_mensual_tracto = (st.session_state.valor_tractor - st.session_state.residual_tractor) / (st.session_state.vida_tractor * 12) if st.session_state.vida_tractor > 0 else 0
+        st.info(f"📉 Depreciación Mensual: **${dep_mensual_tracto:,.2f}**")
+        
     with col_e2:
         st.markdown("**Caja (Remolque)**")
         st.session_state.valor_caja = st.number_input("Valor Adquisición Caja ($)", value=float(st.session_state.valor_caja))
         st.session_state.residual_caja = st.number_input("Valor Residual Caja ($)", value=float(st.session_state.residual_caja))
         st.session_state.vida_caja = st.number_input("Vida Útil Caja (Años)", value=int(st.session_state.vida_caja), step=1)
+        
+        # --- NUEVO: CÁLCULO EN VIVO CAJA ---
+        dep_mensual_caja = (st.session_state.valor_caja - st.session_state.residual_caja) / (st.session_state.vida_caja * 12) if st.session_state.vida_caja > 0 else 0
+        st.info(f"📉 Depreciación Mensual: **${dep_mensual_caja:,.2f}**")
 
     st.markdown("---")
 
