@@ -52,6 +52,7 @@ if 'matriz_peajes_dinamica' not in st.session_state:
         "salinas victoria": 845.00,
         "silao": 2979.00,
         "pesqueria": 845.00,
+        "el derramadero": 1110.00,
         "cuautitlan": 3803.00
     }
 
