@@ -82,18 +82,42 @@ precios_accesorios = {
     "MOVIMIENTO EN FALSO": 2610.00
 }
 
-# --- 3. EL CEREBRO HÍBRIDO (BIDIRECCIONAL) ---
+# --- 3. EL CEREBRO HÍBRIDO (CORREGIDO: RUTAS TRANSVERSALES) ---
 def consultar_peaje_hibrido(origen, destino):
     """
-    Busca peajes en la memoria dinámica uniendo origen y destino.
+    Busca peajes exactos o por ciudad base. Detecta rutas transversales.
     """
-    ruta_completa = f"{origen.lower()} {destino.lower()}"
+    origen_limpio = origen.lower().strip()
+    destino_limpio = destino.lower().strip()
     
-    for ciudad, costo in st.session_state.matriz_peajes_dinamica.items():
+    # 1. Búsqueda de Ruta Exacta Transversal (Ej: "monterrey - san luis potosi")
+    ruta_ida = f"{origen_limpio} - {destino_limpio}"
+    ruta_vuelta = f"{destino_limpio} - {origen_limpio}"
+    
+    if ruta_ida in st.session_state.matriz_peajes_dinamica:
+        return st.session_state.matriz_peajes_dinamica[ruta_ida] / 1.16
+    if ruta_vuelta in st.session_state.matriz_peajes_dinamica:
+        return st.session_state.matriz_peajes_dinamica[ruta_vuelta] / 1.16
+        
+    # 2. Búsqueda por Ciudad Única (Asumiendo viaje desde/hacia la Base)
+    ruta_completa = f"{origen_limpio} {destino_limpio}"
+    ciudades_encontradas = []
+    
+    for ciudad in st.session_state.matriz_peajes_dinamica.keys():
         if ciudad in ruta_completa:
-            return costo / 1.16  # Le quitamos el IVA automáticamente
+            ciudades_encontradas.append(ciudad)
             
+    # Si encuentra 2 destinos conocidos en la frase (Ej: MTY y SLP), es ruta transversal nueva
+    if len(ciudades_encontradas) > 1:
+        return 0.0 # Te lo deja en 0 para que la agregues manualmente
+        
+    # Si solo encuentra una, aplica la tarifa regular desde la base
+    if len(ciudades_encontradas) == 1:
+        ciudad_clave = ciudades_encontradas[0]
+        return st.session_state.matriz_peajes_dinamica[ciudad_clave] / 1.16
+        
     return 0.0
+
 
 # --- CONEXIÓN A MOTORES DE RUTEO ---
 try:
