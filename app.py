@@ -55,6 +55,7 @@ if 'matriz_peajes_dinamica' not in st.session_state:
         "pesqueria": 845.00,
         "el derramadero": 1331.00,
         "irapuato": 2190.00,
+        "toluca": 2577.00,
     }
 
 # --- PARÁMETROS OPERATIVOS BASE ---
