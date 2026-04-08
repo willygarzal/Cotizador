@@ -372,7 +372,7 @@ with tab_cot:
 
         flete_neto_mxn = km_final * ipk_mxn_final
         total_mxn_neto = flete_neto_mxn + total_extras_venta_mxn + total_fsc_mxn
-        total_usd_neto = total_mxn_neto / tc
+        total_usd_neto = total_mxn_neto / tc if tc > 0 else 0.0
 
         st.markdown("---")
         st.info(f"⛽ **FSC Proyectado:** Factor ${factor_calculado:.2f} (Rend. Base: {rendimiento_base}) = **${total_fsc_mxn:,.2f} MXN**")
