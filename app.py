@@ -673,7 +673,7 @@ with tab_config:
         st.write("") 
         st.write("")
         if st.button("💾 Enseñar Ruta"):
-            if nueva_ciudad and nuevo_peaje > 0:
+            if nueva_ciudad and nuevo_peaje >= 0:
                 st.session_state.matriz_peajes_dinamica[nueva_ciudad.lower()] = nuevo_peaje
                 st.success(f"¡Ruta a {nueva_ciudad} aprendida por el sistema!")
     
