@@ -576,7 +576,7 @@ with tab_hist:
     st.markdown("## 📜 Sábana Financiera de Auditoría")
     if st.session_state.historial: st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
 
-# --- PESTAÑA 4: CONFIGURACIÓN COMPLETA RESTAURADA ---
+# --- PESTAÑA 4: CONFIGURACIÓN COMPLETA RESTAURADA (PARCHE ANTI-LAG) ---
 with tab_config:
     st.markdown("## ⚙️ Configuración de Costeo Operativo")
 
@@ -585,19 +585,19 @@ with tab_config:
     col_v1, col_v2, col_v3 = st.columns(3)
     with col_v1:
         st.markdown("**Tramo Largo (>350km)**")
-        st.session_state.w_llantas_largo = st.number_input("Llantas Larga ($/km)", value=float(st.session_state.w_llantas_largo))
-        st.session_state.w_mtto_largo = st.number_input("Mtto Larga ($/km)", value=float(st.session_state.w_mtto_largo))
-        st.session_state.gasto_op_largo = st.number_input("Gasto Operativo Larga ($/viaje)", value=float(st.session_state.gasto_op_largo))
+        st.number_input("Llantas Larga ($/km)", key="w_llantas_largo", format="%.2f", step=0.05)
+        st.number_input("Mtto Larga ($/km)", key="w_mtto_largo", format="%.2f", step=0.05)
+        st.number_input("Gasto Operativo Larga ($/viaje)", key="gasto_op_largo", format="%.2f", step=10.0)
     with col_v2:
         st.markdown("**Tramo Corto (<=350km)**")
-        st.session_state.w_llantas_corto = st.number_input("Llantas Corta ($/km)", value=float(st.session_state.w_llantas_corto))
-        st.session_state.w_mtto_corto = st.number_input("Mtto Corta ($/km)", value=float(st.session_state.w_mtto_corto))
-        st.session_state.gasto_op_corto = st.number_input("Gasto Operativo Corta ($/viaje)", value=float(st.session_state.gasto_op_corto))
+        st.number_input("Llantas Corta ($/km)", key="w_llantas_corto", format="%.2f", step=0.05)
+        st.number_input("Mtto Corta ($/km)", key="w_mtto_corto", format="%.2f", step=0.05)
+        st.number_input("Gasto Operativo Corta ($/viaje)", key="gasto_op_corto", format="%.2f", step=10.0)
     with col_v3:
         st.markdown("**Sueldos y Administrativos**")
-        st.session_state.w_operador = st.number_input("Sueldo Operador Base ($/km)", value=float(st.session_state.w_operador))
-        st.session_state.w_carga_soc = st.number_input("Carga Social Operador (%)", value=float(st.session_state.w_carga_soc))
-        st.session_state.w_admin = st.number_input("Gasto Administrativo ($/km)", value=float(st.session_state.w_admin))
+        st.number_input("Sueldo Operador Base ($/km)", key="w_operador", format="%.4f", step=0.05)
+        st.number_input("Carga Social Operador (%)", key="w_carga_soc", format="%.2f", step=1.0)
+        st.number_input("Gasto Administrativo ($/km)", key="w_admin", format="%.2f", step=0.5)
 
     st.markdown("---")
     
@@ -605,11 +605,11 @@ with tab_config:
     st.subheader("2. Costos Fijos Mensuales")
     col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
-        st.session_state.w_seguro = st.number_input("Seguro Equipo Mensual ($)", value=float(st.session_state.w_seguro))
+        st.number_input("Seguro Equipo Mensual ($)", key="w_seguro", format="%.2f", step=100.0)
     with col_f2:
-        st.session_state.w_gps_tracto = st.number_input("GPS Tracto Mensual ($)", value=float(st.session_state.w_gps_tracto))
+        st.number_input("GPS Tracto Mensual ($)", key="w_gps_tracto", format="%.2f", step=50.0)
     with col_f3:
-        st.session_state.w_gps_caja = st.number_input("GPS Caja Mensual ($)", value=float(st.session_state.w_gps_caja))
+        st.number_input("GPS Caja Mensual ($)", key="w_gps_caja", format="%.2f", step=50.0)
 
     st.markdown("---")
 
@@ -618,21 +618,20 @@ with tab_config:
     col_e1, col_e2 = st.columns(2)
     with col_e1:
         st.markdown("**Tractor**")
-        st.session_state.valor_tractor = st.number_input("Valor Adquisición Tractor ($)", value=float(st.session_state.valor_tractor))
-        st.session_state.residual_tractor = st.number_input("Valor Residual Tractor ($)", value=float(st.session_state.residual_tractor))
-        st.session_state.vida_tractor = st.number_input("Vida Útil Tractor (Años)", value=int(st.session_state.vida_tractor), step=1)
+        st.number_input("Valor Adquisición Tractor ($)", key="valor_tractor", format="%.2f", step=50000.0)
+        st.number_input("Valor Residual Tractor ($)", key="residual_tractor", format="%.2f", step=10000.0)
+        st.number_input("Vida Útil Tractor (Años)", key="vida_tractor", step=1)
         
-        # --- NUEVO: CÁLCULO EN VIVO TRACTOR ---
+        # El cálculo en vivo ya lee directamente la memoria instantánea
         dep_mensual_tracto = (st.session_state.valor_tractor - st.session_state.residual_tractor) / (st.session_state.vida_tractor * 12) if st.session_state.vida_tractor > 0 else 0
         st.info(f"📉 Depreciación Mensual: **${dep_mensual_tracto:,.2f}**")
         
     with col_e2:
         st.markdown("**Caja (Remolque)**")
-        st.session_state.valor_caja = st.number_input("Valor Adquisición Caja ($)", value=float(st.session_state.valor_caja))
-        st.session_state.residual_caja = st.number_input("Valor Residual Caja ($)", value=float(st.session_state.residual_caja))
-        st.session_state.vida_caja = st.number_input("Vida Útil Caja (Años)", value=int(st.session_state.vida_caja), step=1)
+        st.number_input("Valor Adquisición Caja ($)", key="valor_caja", format="%.2f", step=50000.0)
+        st.number_input("Valor Residual Caja ($)", key="residual_caja", format="%.2f", step=10000.0)
+        st.number_input("Vida Útil Caja (Años)", key="vida_caja", step=1)
         
-        # --- NUEVO: CÁLCULO EN VIVO CAJA ---
         dep_mensual_caja = (st.session_state.valor_caja - st.session_state.residual_caja) / (st.session_state.vida_caja * 12) if st.session_state.vida_caja > 0 else 0
         st.info(f"📉 Depreciación Mensual: **${dep_mensual_caja:,.2f}**")
 
@@ -643,12 +642,12 @@ with tab_config:
     col_m1, col_m2 = st.columns(2)
     with col_m1:
         st.markdown("**Tractor**")
-        st.session_state.km_mes_tracto_largo = st.number_input("Meta KM/Mes Tracto (Largo)", value=float(st.session_state.km_mes_tracto_largo))
-        st.session_state.km_mes_tracto_corto = st.number_input("Meta KM/Mes Tracto (Corto)", value=float(st.session_state.km_mes_tracto_corto))
+        st.number_input("Meta KM/Mes Tracto (Largo)", key="km_mes_tracto_largo", format="%.2f", step=500.0)
+        st.number_input("Meta KM/Mes Tracto (Corto)", key="km_mes_tracto_corto", format="%.2f", step=500.0)
     with col_m2:
         st.markdown("**Caja**")
-        st.session_state.km_mes_caja_largo = st.number_input("Meta KM/Mes Caja (Largo)", value=float(st.session_state.km_mes_caja_largo))
-        st.session_state.km_mes_caja_corto = st.number_input("Meta KM/Mes Caja (Corto)", value=float(st.session_state.km_mes_caja_corto))
+        st.number_input("Meta KM/Mes Caja (Largo)", key="km_mes_caja_largo", format="%.2f", step=500.0)
+        st.number_input("Meta KM/Mes Caja (Corto)", key="km_mes_caja_corto", format="%.2f", step=500.0)
 
     st.markdown("---")
 
@@ -656,9 +655,9 @@ with tab_config:
     st.subheader("5. Márgenes de Comercialización Extras")
     col_ma1, col_ma2 = st.columns(2)
     with col_ma1:
-        st.session_state.margen_cruce = st.number_input("Margen Comercialización Cruces (%)", value=float(st.session_state.margen_cruce))
+        st.number_input("Margen Comercialización Cruces (%)", key="margen_cruce", format="%.2f", step=1.0)
     with col_ma2:
-        st.session_state.margen_accesorios = st.number_input("Margen Comercialización Otros Accesorios (%)", value=float(st.session_state.margen_accesorios))
+        st.number_input("Margen Comercialización Otros Accesorios (%)", key="margen_accesorios", format="%.2f", step=1.0)
 
     # --- SECCIÓN DE APRENDIZAJE VISUAL DE RUTAS ---
     st.markdown("---")
