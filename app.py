@@ -133,9 +133,22 @@ except Exception:
 # --- 4. BARRA LATERAL ---
 with st.sidebar:
     st.header("👤 Datos de Cotización")
-    empresa_remitente = st.text_input("Nuestra Empresa", "")
-    nombre_remitente = st.text_input("Nuestro Representante", "")
-    lugar_expedicion = st.text_input("Lugar de Expedición", "")
+    
+    # 1. Lista desplegable para la Empresa
+    empresas_base = ["HG TRANSPORTACIONES, SA DE CV", "RL TRANSPORTACIONES, SA DE CV"]
+    empresa_remitente = st.selectbox("Nuestra Empresa", empresas_base)
+    
+    # 2. Representante en blanco para llenado manual
+    nombre_remitente = st.text_input("Nuestro Representante", placeholder="Ej. Juan Pérez")
+    
+    # 3. Lógica automática para el Lugar de Expedición
+    if empresa_remitente == "HG TRANSPORTACIONES, SA DE CV":
+        lugar_default = "Pesquería, NL"
+    else:
+        lugar_default = "Cienega de Flores, NL"
+        
+    lugar_expedicion = st.text_input("Lugar de Expedición", value=lugar_default)
+
     
     st.markdown("---")
     empresa_cliente = st.text_input("Para: (Empresa)", "")
