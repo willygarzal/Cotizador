@@ -83,42 +83,23 @@ precios_accesorios = {
     "MOVIMIENTO EN FALSO": 2610.00
 }
 
-# --- 3. EL CEREBRO HÍBRIDO (CORREGIDO: RUTAS TRANSVERSALES) ---
+# --- 3. EL CEREBRO HÍBRIDO ---
 def consultar_peaje_hibrido(origen, destino):
-    """
-    Busca peajes exactos o por ciudad base. Detecta rutas transversales.
-    """
     origen_limpio = origen.lower().strip()
     destino_limpio = destino.lower().strip()
-    
-    # 1. Búsqueda de Ruta Exacta Transversal (Ej: "monterrey - san luis potosi")
     ruta_ida = f"{origen_limpio} - {destino_limpio}"
     ruta_vuelta = f"{destino_limpio} - {origen_limpio}"
     
-    if ruta_ida in st.session_state.matriz_peajes_dinamica:
-        return st.session_state.matriz_peajes_dinamica[ruta_ida] / 1.16
-    if ruta_vuelta in st.session_state.matriz_peajes_dinamica:
-        return st.session_state.matriz_peajes_dinamica[ruta_vuelta] / 1.16
+    if ruta_ida in st.session_state.matriz_peajes_dinamica: return st.session_state.matriz_peajes_dinamica[ruta_ida] / 1.16
+    if ruta_vuelta in st.session_state.matriz_peajes_dinamica: return st.session_state.matriz_peajes_dinamica[ruta_vuelta] / 1.16
         
-    # 2. Búsqueda por Ciudad Única (Asumiendo viaje desde/hacia la Base)
     ruta_completa = f"{origen_limpio} {destino_limpio}"
-    ciudades_encontradas = []
-    
-    for ciudad in st.session_state.matriz_peajes_dinamica.keys():
-        if ciudad in ruta_completa:
-            ciudades_encontradas.append(ciudad)
+    ciudades_encontradas = [ciudad for ciudad in st.session_state.matriz_peajes_dinamica.keys() if ciudad in ruta_completa]
             
-    # Si encuentra 2 destinos conocidos en la frase (Ej: MTY y SLP), es ruta transversal nueva
-    if len(ciudades_encontradas) > 1:
-        return 0.0 # Te lo deja en 0 para que la agregues manualmente
-        
-    # Si solo encuentra una, aplica la tarifa regular desde la base
-    if len(ciudades_encontradas) == 1:
-        ciudad_clave = ciudades_encontradas[0]
-        return st.session_state.matriz_peajes_dinamica[ciudad_clave] / 1.16
+    if len(ciudades_encontradas) > 1: return 0.0
+    if len(ciudades_encontradas) == 1: return st.session_state.matriz_peajes_dinamica[ciudades_encontradas[0]] / 1.16
         
     return 0.0
-
 
 # --- CONEXIÓN A MOTORES DE RUTEO ---
 try:
@@ -133,22 +114,16 @@ except Exception:
 # --- 4. BARRA LATERAL ---
 with st.sidebar:
     st.header("👤 Datos de Cotización")
-    
-    # 1. Lista desplegable para la Empresa
     empresas_base = ["HG TRANSPORTACIONES, SA DE CV", "RL TRANSPORTACIONES, SA DE CV"]
     empresa_remitente = st.selectbox("Nuestra Empresa", empresas_base)
-    
-    # 2. Representante en blanco para llenado manual
     nombre_remitente = st.text_input("Nuestro Representante", placeholder="Ej. Juan Pérez")
     
-    # 3. Lógica automática para el Lugar de Expedición
     if empresa_remitente == "HG TRANSPORTACIONES, SA DE CV":
         lugar_default = "Pesquería, NL"
     else:
         lugar_default = "Cienega de Flores, NL"
         
     lugar_expedicion = st.text_input("Lugar de Expedición", value=lugar_default)
-
     
     st.markdown("---")
     empresa_cliente = st.text_input("Para: (Empresa)", "")
@@ -174,7 +149,6 @@ with st.sidebar:
 
 w_dep_tracto_calc = (st.session_state.valor_tractor - st.session_state.residual_tractor) / (st.session_state.vida_tractor * 12) if st.session_state.vida_tractor > 0 else 0
 w_dep_caja_calc = (st.session_state.valor_caja - st.session_state.residual_caja) / (st.session_state.vida_caja * 12) if st.session_state.vida_caja > 0 else 0
-
 w_admin = st.session_state.w_admin
 w_operador = st.session_state.w_operador
 w_carga_soc = st.session_state.w_carga_soc
@@ -232,23 +206,18 @@ with tab_cot:
                         if geo_dest['features']: coordenadas_viaje.append(geo_dest['features'][0]['geometry']['coordinates'])
                             
                         if len(coordenadas_viaje) >= 2:
-                            # --- PILOTO AUTOMÁTICO ANTI-CAÍDAS ---
                             try:
                                 ruta = ors_client.directions(coordinates=coordenadas_viaje, profile='driving-hgv', format='geojson')
                             except Exception:
                                 ruta = ors_client.directions(coordinates=coordenadas_viaje, profile='driving-car', format='geojson')
                                 st.toast("⚠️ ORS HGV en mantenimiento: Usando cálculo de distancia estándar.")
-                                
                             dist_api = round(ruta['features'][0]['properties']['summary']['distance'] / 1000.0, 1)
                         
-                        # --- LLAMADA AL NUEVO CEREBRO DINÁMICO ---
                         peaje_api = consultar_peaje_hibrido(orig, dest)
-
                         st.session_state.km_input_key = dist_api
                         st.session_state.casetas_input_key = peaje_api
                         st.session_state.ruta_previa = ruta_actual
                         st.session_state.redonda_previa = False 
-                        
                     except Exception as e:
                         st.error(f"Error en el cálculo: {e}")
 
@@ -263,12 +232,9 @@ with tab_cot:
 
         km_final = st.number_input("KMS Totales (Editar si es necesario)", key="km_input_key", format="%.2f", step=1.0)
 
-        if tipo_ruta_manual == "Forzar Tramo Corto" or tipo_ruta_manual == "Mov. Local/Patio":
-            es_largo = False
-        elif tipo_ruta_manual == "Forzar Tramo Largo":
-            es_largo = True
-        else:
-            es_largo = km_final > 350
+        if tipo_ruta_manual == "Forzar Tramo Corto" or tipo_ruta_manual == "Mov. Local/Patio": es_largo = False
+        elif tipo_ruta_manual == "Forzar Tramo Largo": es_largo = True
+        else: es_largo = km_final > 350
             
         w_llantas = st.session_state.w_llantas_largo if es_largo else st.session_state.w_llantas_corto
         w_mtto = st.session_state.w_mtto_largo if es_largo else st.session_state.w_mtto_corto
@@ -329,14 +295,10 @@ with tab_cot:
                     costo = col_c2.number_input(f"Costo ($) - {acc}", min_value=0.0, value=float(precios_accesorios[acc]), step=50.0, key=f"costo_{acc}")
                     
                     subtotal_costo = cant * costo
-                    
-                    if acc == "CRUCE":
-                        margen_dec = min(st.session_state.margen_cruce / 100.0, 0.99)
-                    else:
-                        margen_dec = min(st.session_state.margen_accesorios / 100.0, 0.99)
+                    if acc == "CRUCE": margen_dec = min(st.session_state.margen_cruce / 100.0, 0.99)
+                    else: margen_dec = min(st.session_state.margen_accesorios / 100.0, 0.99)
                         
                     subtotal_venta = subtotal_costo / (1 - margen_dec) if margen_dec < 1 else subtotal_costo
-                        
                     total_accesorios_costo += subtotal_costo
                     total_accesorios_venta += subtotal_venta
                     detalle_accesorios[acc] = {"cantidad": cant, "costo": subtotal_costo, "venta": subtotal_venta}
@@ -350,7 +312,6 @@ with tab_cot:
                 subtotal_costo = monto_personalizado
                 margen_dec_custom = min(st.session_state.margen_accesorios / 100.0, 0.99)
                 subtotal_venta = subtotal_costo / (1 - margen_dec_custom) if margen_dec_custom < 1 else subtotal_costo
-                
                 total_accesorios_costo += subtotal_costo
                 total_accesorios_venta += subtotal_venta
                 detalle_accesorios[desc_personalizado] = {"cantidad": 1.0, "costo": subtotal_costo, "venta": subtotal_venta}
@@ -358,15 +319,9 @@ with tab_cot:
             total_extras_venta_mxn = casetas + total_ajuste_comb + total_accesorios_venta
             nombres_accesorios = ", ".join([f"{k} (x{v['cantidad']})" for k, v in detalle_accesorios.items()]) if detalle_accesorios else "Ninguno"
 
-                        # --- DESGLOSE DE CARGOS EXTRA Y ACCESORIOS ---
             st.markdown("---")
             st.markdown("#### ➕ Resumen de Cargos Adicionales")
-            
-            # 1. Ajuste de Combustible
-            if total_ajuste_comb > 0.0:
-                st.write(f"**⛽ Ajuste de Combustible:** ${total_ajuste_comb:,.2f} MXN")
-                
-            # 2. Accesorios de Lista y Especiales
+            if total_ajuste_comb > 0.0: st.write(f"**⛽ Ajuste de Combustible:** ${total_ajuste_comb:,.2f} MXN")
             if detalle_accesorios:
                 st.write("**📋 Desglose de Accesorios Operativos:**")
                 for acc, datos in detalle_accesorios.items():
@@ -406,30 +361,42 @@ with tab_cot:
         st.markdown("---")
         st.info(f"⛽ **FSC Proyectado:** Factor ${factor_calculado:.2f} (Rend. Base: {rendimiento_base}) = **${total_fsc_mxn:,.2f} MXN**")
 
+    # --- NUEVOS CÁLCULOS DE MÁRGENES SEPARADOS ---
     egreso_total_viaje = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb + total_accesorios_costo
     utilidad_neta_viaje_actual = total_mxn_neto - egreso_total_viaje
     ebitda_viaje_actual = utilidad_neta_viaje_actual + costo_deprec_viaje 
-    
     margen_neto_real = (utilidad_neta_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0.0
 
+    # 1. Margen Puro del Flete
+    ingreso_flete_total = flete_neto_mxn + total_fsc_mxn + casetas + total_ajuste_comb
+    costo_flete_total = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb
+    utilidad_flete_mxn = ingreso_flete_total - costo_flete_total
+    margen_flete_real = (utilidad_flete_mxn / ingreso_flete_total) * 100 if ingreso_flete_total > 0 else 0.0
+
+    # 2. Margen de Extras/Comercialización
+    ingreso_extras_total = total_accesorios_venta
+    costo_extras_total = total_accesorios_costo
+    utilidad_extras_mxn = ingreso_extras_total - costo_extras_total
+    margen_extras_real = (utilidad_extras_mxn / ingreso_extras_total) * 100 if ingreso_extras_total > 0 else 0.0
+
     st.markdown("---")
+    
+    # ALERTAS DE RENTABILIDAD
+    if utilidad_neta_viaje_actual < 0: 
+        st.error("🚨 ¡PÉRDIDA DETECTADA! La tarifa no cubre los costos totales.")
+    if km_final > 0 and margen_flete_real < 20.0: 
+        st.error(f"🚨 ¡ALTO AHÍ! MARGEN DE FLETE MENOR AL 20% ({margen_flete_real:.1f}%). REQUIERE AUTORIZACIÓN DIRECTIVA.")
+
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1: st.metric(label="TOTAL A FACTURAR MXN", value=f"${total_mxn_neto:,.2f}")
     with kpi2: st.metric(label="TOTAL A FACTURAR USD", value=f"${total_usd_neto:,.2f}", delta=f"TC: {tc}")
     with kpi3: st.metric(label=f"IPK Facturado ({moneda_tag})", value=f"${ipk_pactado:.2f}")
     with kpi4:
         color_delta = "normal" if margen_neto_real >= margen_objetivo else ("off" if margen_neto_real >= 0 else "inverse")
-        if utilidad_neta_viaje_actual < 0: st.error("🚨 ¡PÉRDIDA DETECTADA! La tarifa no cubre los costos totales.")
-        st.metric(
-            label="Utilidad Neta del Viaje", 
-            value=f"${utilidad_neta_viaje_actual:,.2f}", 
-            delta=f"Margen Neto Real: {margen_neto_real:.2f}%", 
-            delta_color=color_delta
-        )
+        st.metric(label="Utilidad Neta del Viaje", value=f"${utilidad_neta_viaje_actual:,.2f}", delta=f"Margen Neto: {margen_neto_real:.2f}%", delta_color=color_delta)
 
     st.markdown("---")
     st.header("🤝 Tablero de Negociación: Tarifa Target vs Ideal")
-    
     with st.container(border=True):
         col_ideal, col_target = st.columns(2)
         es_usd = moneda_neg == "USD (Dólares)"
@@ -442,8 +409,7 @@ with tab_cot:
             st.write(f"Basado en tus métricas y margen del {margen_objetivo}%.")
             st.metric(f"Tarifa a Cobrar ({moneda_label})", f"${tarifa_ideal_mostrar:,.2f}")
             st.metric(f"Utilidad Proyectada ({moneda_label})", f"${utilidad_ideal_mostrar:,.2f}", f"{margen_neto_real:.2f}% margen")
-            if es_usd:
-                st.caption(f"Equivalente a **${total_mxn_neto:,.2f} MXN** (TC: {tc})")
+            if es_usd: st.caption(f"Equivalente a **${total_mxn_neto:,.2f} MXN** (TC: {tc})")
             
         with col_target:
             st.subheader("💼 Escenario del Cliente (Target)")
@@ -458,8 +424,7 @@ with tab_cot:
                     costo_acc_mostrar = datos['costo'] / tc if es_usd else datos['costo']
                     if st.checkbox(f"Absorber {acc} (Costo interno: ${costo_acc_mostrar:,.2f} {moneda_label})", key=f"target_check_{acc}"):
                         costo_absorbido_target_mxn += datos['costo']
-            else:
-                st.info("No has seleccionado accesorios extra en la sección superior.")
+            else: st.info("No has seleccionado accesorios extra en la sección superior.")
                 
             egreso_base_sin_acc = costo_piso_total + total_fsc_mxn + casetas + total_ajuste_comb
             costo_target_real_mxn = egreso_base_sin_acc + costo_absorbido_target_mxn
@@ -484,7 +449,7 @@ with tab_cot:
                     "Origen": orig, "Destino": dest, "Servicio": tipo_op, "KM": km_final,
                     "Flete": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
                     "Extras": total_extras_venta_mxn - casetas, "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
-                    "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
+                    "Costo_Directo": costo_flete_total, "Flete_Puro_Venta": ingreso_flete_total,
                     "Ajuste_Comb": total_ajuste_comb, "Accesorios_Venta": total_accesorios_venta, "Accesorios_Costo": total_accesorios_costo,
                     "Detalle_Accesorios": nombres_accesorios,
                     "EBITDA": ebitda_viaje_actual, "Utilidad_Neta": utilidad_neta_viaje_actual
@@ -514,14 +479,23 @@ with tab_cot:
                 "Flete Neto": flete_neto_mxn, "FSC": total_fsc_mxn, "Casetas": casetas, 
                 "Ajuste_Comb": total_ajuste_comb, "Accesorios_Venta": total_accesorios_venta, "Accesorios_Costo": total_accesorios_costo,
                 "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
+                "Flete_Puro_Venta": ingreso_flete_total, "Costo_Directo": costo_flete_total,
                 "EBITDA": ebitda_viaje_actual, "Utilidad_Neta": utilidad_neta_viaje_actual
             }]
             for r in rutas_a_guardar:
                 moneda_ruta = r.get("Moneda", moneda_tag)
                 f_conv = (1/tc) if moneda_ruta == "USD (Dólares)" else 1
+                
                 ingreso_total_mxn = r.get("Total MXN", total_mxn_neto)
                 utilidad_neta_mxn = r.get("Utilidad_Neta", 0)
                 margen_neto_pct = (utilidad_neta_mxn / ingreso_total_mxn) * 100 if ingreso_total_mxn > 0 else 0
+                
+                # Cálculo Margen Flete para Tabla
+                flete_venta_hist = r.get("Flete_Puro_Venta", ingreso_flete_total)
+                costo_flete_hist = r.get("Costo_Directo", costo_flete_total)
+                util_flete_hist = flete_venta_hist - costo_flete_hist
+                margen_flete_pct = (util_flete_hist / flete_venta_hist) * 100 if flete_venta_hist > 0 else 0
+
                 st.session_state.historial.insert(0, {
                     "Fecha": datetime.now().strftime("%d/%m %H:%M"), "Empresa Cliente": empresa_cliente, "Contacto Cliente": atencion_cliente,
                     "Ruta": f"{r['Origen']}-{r['Destino']}", "KMS": r["KM"], "Servicio": r.get("Servicio", tipo_op), "Equipo": tipo_equipo,
@@ -531,8 +505,9 @@ with tab_cot:
                     "Accesorios (Venta)": round(r.get("Accesorios_Venta", total_accesorios_venta) * f_conv, 2),
                     "Detalle Accesorios": r.get("Detalle_Accesorios", nombres_accesorios),
                     "Total MXN": round(ingreso_total_mxn, 2), "Total USD": round(r.get("Total USD", total_usd_neto), 2), 
- 
-                    "Margen Neto %": round(margen_neto_pct, 1), "EBITDA": round(r.get("EBITDA", 0) * f_conv, 2),
+                    "Margen Flete %": round(margen_flete_pct, 1),
+                    "Margen Neto %": round(margen_neto_pct, 1), 
+                    "EBITDA": round(r.get("EBITDA", 0) * f_conv, 2),
                     "Utilidad Neta": round(utilidad_neta_mxn * f_conv, 2)
                 })
             st.toast("✅ Sábana Financiera Guardada en Historial")
@@ -588,28 +563,59 @@ with tab_cot:
         wa_text += f"\n💰 *TOTAL:* ${gran_total_mxn:,.2f} {moneda_tag}\n\n*Acepto Tarifas y Condiciones*"
         st.markdown(f'<a href="https://wa.me/{telefono_wa}?text={urllib.parse.quote(wa_text)}" target="_blank"><button style="background-color:#25D366; color:white; width:100%; padding:10px; border-radius:5px; border:none; font-weight:bold;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
-# --- PESTAÑA 2: TABLERO FINANCIERO DIRECTIVO ---
+# --- PESTAÑA 2: TABLERO FINANCIERO DIRECTIVO (RAYOS X) ---
 with tab_rx:
     st.markdown("## 📊 Radiografía Financiera ")
     if km_final > 0:
+        # PISO 1: VISIÓN GENERAL
+        st.subheader("1. Visión Directiva General")
         margen_ebitda = (ebitda_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
-        margen_neto = (utilidad_neta_viaje_actual / total_mxn_neto) * 100 if total_mxn_neto > 0 else 0
+        
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Ingreso Total (Venta)", f"${total_mxn_neto:,.2f}")
         k2.metric("Egreso Total (Costo Real)", f"${egreso_total_viaje:,.2f}")
         k3.metric("EBITDA (Flujo)", f"${ebitda_viaje_actual:,.2f}", f"{margen_ebitda:.2f}%")
-        k4.metric("Utilidad Neta", f"${utilidad_neta_viaje_actual:,.2f}", f"{margen_neto:.2f}%")
+        k4.metric("Utilidad Neta Global", f"${utilidad_neta_viaje_actual:,.2f}", f"{margen_neto_real:.2f}%")
+        
+        # PISO 2: DIAGNÓSTICO SEPARADO
+        st.markdown("---")
+        st.subheader("2. Diagnóstico de Rentabilidad Separado")
+        col_rx1, col_rx2 = st.columns(2)
+        
+        with col_rx1:
+            with st.container(border=True):
+                st.markdown("### 🚛 Operación Transporte (Flete Puro)")
+                st.caption("Tarifa Base + FSC + Casetas vs Costos Puros de Rodamiento")
+                st.metric("Ingreso por Flete y Ruta", f"${ingreso_flete_total:,.2f}")
+                st.metric("Costo Directo Operativo", f"${costo_flete_total:,.2f}")
+                color_flete = "normal" if margen_flete_real >= 20.0 else "inverse"
+                st.metric("Utilidad Puro Flete", f"${utilidad_flete_mxn:,.2f}", f"{margen_flete_real:.2f}%", delta_color=color_flete)
+                
+        with col_rx2:
+            with st.container(border=True):
+                st.markdown("### 📦 Comercialización y Extras")
+                st.caption("Venta de Accesorios vs Pago de Servicios a Terceros")
+                st.metric("Ingreso por Extras", f"${ingreso_extras_total:,.2f}")
+                st.metric("Costo de Extras", f"${costo_extras_total:,.2f}")
+                st.metric("Utilidad de Comercialización", f"${utilidad_extras_mxn:,.2f}", f"{margen_extras_real:.2f}%")
+
+        # PISO 3: DESGLOSE ANALÍTICO
+        st.markdown("---")
+        st.subheader("3. Desglose Analítico")
         with st.expander("🔍 Desglose Completo de Egresos", expanded=True):
-            st.write(f"- **Diésel (FSC):** ${total_fsc_mxn:,.2f}"); st.write(f"- **Peajes/Casetas:** ${casetas:,.2f}")
-            st.write(f"- **Sueldo, Carga Social y Op. Fijo:** ${costo_operador:,.2f}"); st.write(f"- **Costo Real Accesorios:** ${total_accesorios_costo:,.2f}")
-            st.write(f"- **Mtto. y Llantas:** ${costo_llantas_mtto:,.2f}"); st.write(f"- **Gastos Admon. y Fijos:** ${costo_admin_viaje + costo_seg_gps_viaje + costo_deprec_viaje:,.2f}")
+            st.write(f"- **Diésel (FSC):** ${total_fsc_mxn:,.2f}")
+            st.write(f"- **Peajes/Casetas:** ${casetas:,.2f}")
+            st.write(f"- **Sueldo, Carga Social y Op. Fijo:** ${costo_operador:,.2f}")
+            st.write(f"- **Costo Real Accesorios:** ${total_accesorios_costo:,.2f}")
+            st.write(f"- **Mtto. y Llantas:** ${costo_llantas_mtto:,.2f}")
+            st.write(f"- **Gastos Admon. y Fijos:** ${costo_admin_viaje + costo_seg_gps_viaje + costo_deprec_viaje:,.2f}")
 
 # --- PESTAÑA 3: HISTORIAL ---
 with tab_hist:
     st.markdown("## 📜 Sábana Financiera de Auditoría")
     if st.session_state.historial: st.dataframe(pd.DataFrame(st.session_state.historial), use_container_width=True)
 
-# --- PESTAÑA 4: CONFIGURACIÓN COMPLETA RESTAURADA (PARCHE ANTI-LAG) ---
+# --- PESTAÑA 4: CONFIGURACIÓN COMPLETA RESTAURADA ---
 with tab_config:
     st.markdown("## ⚙️ Configuración de Costeo Operativo")
 
@@ -637,12 +643,9 @@ with tab_config:
     # 2. Costos Fijos, Seguros y GPS
     st.subheader("2. Costos Fijos Mensuales")
     col_f1, col_f2, col_f3 = st.columns(3)
-    with col_f1:
-        st.number_input("Seguro Equipo Mensual ($)", key="w_seguro", format="%.2f", step=100.0)
-    with col_f2:
-        st.number_input("GPS Tracto Mensual ($)", key="w_gps_tracto", format="%.2f", step=50.0)
-    with col_f3:
-        st.number_input("GPS Caja Mensual ($)", key="w_gps_caja", format="%.2f", step=50.0)
+    with col_f1: st.number_input("Seguro Equipo Mensual ($)", key="w_seguro", format="%.2f", step=100.0)
+    with col_f2: st.number_input("GPS Tracto Mensual ($)", key="w_gps_tracto", format="%.2f", step=50.0)
+    with col_f3: st.number_input("GPS Caja Mensual ($)", key="w_gps_caja", format="%.2f", step=50.0)
 
     st.markdown("---")
 
@@ -654,8 +657,6 @@ with tab_config:
         st.number_input("Valor Adquisición Tractor ($)", key="valor_tractor", format="%.2f", step=50000.0)
         st.number_input("Valor Residual Tractor ($)", key="residual_tractor", format="%.2f", step=10000.0)
         st.number_input("Vida Útil Tractor (Años)", key="vida_tractor", step=1)
-        
-        # El cálculo en vivo ya lee directamente la memoria instantánea
         dep_mensual_tracto = (st.session_state.valor_tractor - st.session_state.residual_tractor) / (st.session_state.vida_tractor * 12) if st.session_state.vida_tractor > 0 else 0
         st.info(f"📉 Depreciación Mensual: **${dep_mensual_tracto:,.2f}**")
         
@@ -664,7 +665,6 @@ with tab_config:
         st.number_input("Valor Adquisición Caja ($)", key="valor_caja", format="%.2f", step=50000.0)
         st.number_input("Valor Residual Caja ($)", key="residual_caja", format="%.2f", step=10000.0)
         st.number_input("Vida Útil Caja (Años)", key="vida_caja", step=1)
-        
         dep_mensual_caja = (st.session_state.valor_caja - st.session_state.residual_caja) / (st.session_state.vida_caja * 12) if st.session_state.vida_caja > 0 else 0
         st.info(f"📉 Depreciación Mensual: **${dep_mensual_caja:,.2f}**")
 
@@ -687,10 +687,8 @@ with tab_config:
     # 5. Márgenes de Accesorios
     st.subheader("5. Márgenes de Comercialización Extras")
     col_ma1, col_ma2 = st.columns(2)
-    with col_ma1:
-        st.number_input("Margen Comercialización Cruces (%)", key="margen_cruce", format="%.2f", step=1.0)
-    with col_ma2:
-        st.number_input("Margen Comercialización Otros Accesorios (%)", key="margen_accesorios", format="%.2f", step=1.0)
+    with col_ma1: st.number_input("Margen Comercialización Cruces (%)", key="margen_cruce", format="%.2f", step=1.0)
+    with col_ma2: st.number_input("Margen Comercialización Otros Accesorios (%)", key="margen_accesorios", format="%.2f", step=1.0)
 
     # --- SECCIÓN DE APRENDIZAJE VISUAL DE RUTAS ---
     st.markdown("---")
@@ -698,10 +696,8 @@ with tab_config:
     st.info("Si una ruta no arroja casetas en automático, tu equipo puede buscarla en GMap y enseñársela al sistema aquí. (El sistema le quitará el IVA solo, tú pon el costo final que te arroje la página).")
     
     col_r1, col_r2, col_r3 = st.columns([2, 2, 1])
-    with col_r1:
-        nueva_ciudad = st.text_input("Nombre de la Ciudad (Ej: San Luis Potosi)")
-    with col_r2:
-        nuevo_peaje = st.number_input("Costo Total GMap CON IVA ($)", min_value=0.0, step=50.0)
+    with col_r1: nueva_ciudad = st.text_input("Nombre de la Ciudad (Ej: San Luis Potosi)")
+    with col_r2: nuevo_peaje = st.number_input("Costo Total GMap CON IVA ($)", min_value=0.0, step=50.0)
     with col_r3:
         st.write("") 
         st.write("")
@@ -710,5 +706,4 @@ with tab_config:
                 st.session_state.matriz_peajes_dinamica[nueva_ciudad.lower()] = nuevo_peaje
                 st.success(f"¡Ruta a {nueva_ciudad} aprendida por el sistema!")
     
-    with st.expander("Ver Rutas Memorizadas Actualmente"):
-        st.write(st.session_state.matriz_peajes_dinamica)
+    with st.expander("Ver Rutas Memorizadas Actualmente"): st.write(st.session_state.matriz_peajes_dinamica)
