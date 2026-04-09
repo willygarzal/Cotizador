@@ -529,7 +529,9 @@ with tab_cot:
                     "FSC Cotizado": round(r["FSC"] * f_conv, 2), "Casetas Cotizadas": round(r["Casetas"] * f_conv, 2), 
                     "Ajuste Combustible": round(r.get("Ajuste_Comb", total_ajuste_comb) * f_conv, 2),
                     "Accesorios (Venta)": round(r.get("Accesorios_Venta", total_accesorios_venta) * f_conv, 2),
+                    "Detalle Accesorios": r.get("Detalle_Accesorios", nombres_accesorios),
                     "Total MXN": round(ingreso_total_mxn, 2), "Total USD": round(r.get("Total USD", total_usd_neto), 2), 
+ 
                     "Margen Neto %": round(margen_neto_pct, 1), "EBITDA": round(r.get("EBITDA", 0) * f_conv, 2),
                     "Utilidad Neta": round(utilidad_neta_mxn * f_conv, 2)
                 })
