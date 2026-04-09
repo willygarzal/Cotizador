@@ -121,7 +121,7 @@ with st.sidebar:
     if empresa_remitente == "HG TRANSPORTACIONES, SA DE CV":
         lugar_default = "Pesquería, NL"
     else:
-        lugar_default = "Cienega de Flores, NL"
+        lugar_default = "Ciénega de Flores, NL"
         
     lugar_expedicion = st.text_input("Lugar de Expedición", value=lugar_default)
     
