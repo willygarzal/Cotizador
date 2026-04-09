@@ -356,6 +356,20 @@ with tab_cot:
                 detalle_accesorios[desc_personalizado] = {"cantidad": 1.0, "costo": subtotal_costo, "venta": subtotal_venta}
 
             total_extras_venta_mxn = casetas + total_ajuste_comb + total_accesorios_venta
+                        # --- DESGLOSE DE CARGOS EXTRA Y ACCESORIOS ---
+            st.markdown("---")
+            st.markdown("#### ➕ Resumen de Cargos Adicionales")
+            
+            # 1. Ajuste de Combustible
+            if total_ajuste_comb > 0.0:
+                st.write(f"**⛽ Ajuste de Combustible:** ${total_ajuste_comb:,.2f} MXN")
+                
+            # 2. Accesorios de Lista y Especiales
+            if detalle_accesorios:
+                st.write("**📋 Desglose de Accesorios Operativos:**")
+                for acc, datos in detalle_accesorios.items():
+                    st.write(f"- 📦 {acc}: ${datos['venta']:,.2f} MXN")
+
 
     with col_ruta:
         st.markdown("---")
