@@ -477,7 +477,7 @@ with tab_cot:
 
     st.markdown("---")
     col_btn_add, col_btn_clear = st.columns([3, 1])
-    with col_btn_add:
+        with col_btn_add:
         if st.button("➕ Añadir este Tramo a la Propuesta", use_container_width=True, type="primary"):
             if orig and dest:
                 st.session_state.rutas_propuesta.append({
@@ -486,9 +486,11 @@ with tab_cot:
                     "Extras": total_extras_venta_mxn - casetas, "Total MXN": total_mxn_neto, "Total USD": total_usd_neto,
                     "Costo_Directo": cpk_piso_flete * km_final, "Operador": costo_operador if km_final > 0 else 0,
                     "Ajuste_Comb": total_ajuste_comb, "Accesorios_Venta": total_accesorios_venta, "Accesorios_Costo": total_accesorios_costo,
+                    "Detalle_Accesorios": nombres_accesorios,
                     "EBITDA": ebitda_viaje_actual, "Utilidad_Neta": utilidad_neta_viaje_actual
                 })
-                st.toast(f"✅ Tramo añadido a la propuesta")
+                st.toast("✅ Tramo añadido a la propuesta")
+
     with col_btn_clear:
         if st.button("🗑️ Limpiar Tramos", use_container_width=True):
             st.session_state.rutas_propuesta = []
