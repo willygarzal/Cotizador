@@ -477,7 +477,7 @@ with tab_cot:
 
     st.markdown("---")
     col_btn_add, col_btn_clear = st.columns([3, 1])
-        with col_btn_add:
+    with col_btn_add:
         if st.button("➕ Añadir este Tramo a la Propuesta", use_container_width=True, type="primary"):
             if orig and dest:
                 st.session_state.rutas_propuesta.append({
