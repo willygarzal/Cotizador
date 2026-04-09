@@ -356,6 +356,8 @@ with tab_cot:
                 detalle_accesorios[desc_personalizado] = {"cantidad": 1.0, "costo": subtotal_costo, "venta": subtotal_venta}
 
             total_extras_venta_mxn = casetas + total_ajuste_comb + total_accesorios_venta
+                        nombres_accesorios = ", ".join([f"{k} (x{v['cantidad']})" for k, v in detalle_accesorios.items()]) if detalle_accesorios else "Ninguno"
+
                         # --- DESGLOSE DE CARGOS EXTRA Y ACCESORIOS ---
             st.markdown("---")
             st.markdown("#### ➕ Resumen de Cargos Adicionales")
