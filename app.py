@@ -62,7 +62,7 @@ if 'matriz_peajes_dinamica' not in st.session_state:
 default_params = {
     "w_llantas_largo": 0.62, "w_mtto_largo": 1.09, "gasto_op_largo": 247.0,
     "w_llantas_corto": 0.60, "w_mtto_corto": 1.05, "gasto_op_corto": 88.0,
-    "w_admin": 4.16, "w_operador": 1.8928, "w_carga_soc": 35.0,
+    "w_admin": 6.00, "w_operador": 1.8928, "w_carga_soc": 35.0,
     "w_seguro": 5000.0, "w_gps_tracto": 1228.74, "w_gps_caja": 215.25, 
     "valor_tractor": 2887931.03, "residual_tractor": 1155172.41, "vida_tractor": 7,
     "valor_caja": 612500.00, "residual_caja": 245000.00, "vida_caja": 10,
@@ -134,7 +134,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("⛽ Combustible (FSC)")
-    precio_diesel = st.number_input("Precio Diésel ($/L)", value=24.57, step=0.50)
+    precio_diesel = st.number_input("Precio Diésel ($/L)", value=24.53, step=0.50)
     rendimiento_base = st.number_input("Rendimiento (km/L)", value=2.70, step=0.05)
     
     factor_calculado = precio_diesel / rendimiento_base if rendimiento_base > 0 else 0
